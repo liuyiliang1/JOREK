@@ -574,6 +574,7 @@ module mod_pastix
       ac_mat%nnz = ac_mat%jcn(ac_mat%ng+1) - 1
       if (ac_mat%nnz < nnz) then
          call pastix_fortran_checkmatrix_end(check_data, Int1, ac_mat%irn, ac_mat%val, Int1)
+         ptss%analyzed = .false.
       endif
     endif
 

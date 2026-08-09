@@ -665,6 +665,7 @@ subroutine clean_surfaces(node_list,element_list,flux_list,n_grids)
   integer               :: i_surf, i_part, i_piece, i_part_save, i_pieces_max
   integer               :: i_elm, inside, inside2, count
   real*8                :: rr,    ss
+  real*8                :: Z_min, R_tmp2, Z_tmp2
   real*8                :: R,dR_dr, dR_ds, dR_drs, dR_drr, dR_dss
   real*8                :: Z,dZ_dr, dZ_ds, dZ_drs, dZ_drr, dZ_dss
   character*256         :: filename
@@ -672,7 +673,7 @@ subroutine clean_surfaces(node_list,element_list,flux_list,n_grids)
   logical               :: dashed
   integer               :: debug
   
-  debug = 1
+  debug = 2
   
   n_flux    = n_grids(1)
   n_open    = n_grids(3); n_outer   = n_grids(4); n_inner = n_grids(5)
@@ -938,22 +939,44 @@ subroutine clean_surfaces(node_list,element_list,flux_list,n_grids)
   
   ! --- Loop over each private surface
   i_part_save = 0
-  if (debug .eq. 2) write(*,*) 'cleaning private surfaces'
+  write(*,'(A,i5)') 'DEBUG clean_surfaces: cleaning private surfaces, n_private_contour=', n_private_contour
+  write(*,'(A,2f12.6)') 'DEBUG clean_surfaces: private contour first pt (R,Z)=', R_private_contour(1), Z_private_contour(1)
+  write(*,'(A,2f12.6)') 'DEBUG clean_surfaces: private contour last pt (R,Z)=', R_private_contour(n_private_contour), Z_private_contour(n_private_contour)
   do i_surf=n_flux+n_open+n_outer+n_inner+1,n_flux+n_open+n_outer+n_inner+n_private
-    do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
-      i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
-      rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
-      ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
-      i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
-      call interp_RZ(node_list,element_list,i_elm,rr,ss, &
-                     R,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss, &
-                     Z,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
-      call check_point_is_inside_contour(R, Z, n_private_contour, R_private_contour, Z_private_contour, inside)
-      if (inside .eq. 1) then
-        i_part_save = i_part
-        exit
-      endif
-    enddo
+    write(*,'(A,i3,A,i3,A)') 'DEBUG clean_surfaces: private surface i_surf=', i_surf, ' has n_parts=', flux_list%flux_surfaces(i_surf)%n_parts, ' before cleaning'
+    if (ES%active_xpoint .eq. SYMMETRIC_XPOINT) then
+      ! For symmetric DN, private contour is unreliable -> select part with lowest Z (deepest in lower divertor)
+      Z_min = 1.d10
+      do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
+        i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
+        rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
+        ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
+        i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
+        call interp_RZ(node_list,element_list,i_elm,rr,ss,R_tmp2,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss,Z_tmp2,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
+        if (Z_tmp2 .lt. Z_min) then
+          Z_min = Z_tmp2
+          i_part_save = i_part
+        endif
+      enddo
+      write(*,'(A,i3,A,i3,A,f12.6)') 'DEBUG clean_surfaces: SYMMETRIC lower_priv: i_surf=', i_surf, ' selected lowest-Z part=', i_part_save, ' Z_min=', Z_min
+    else
+      do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
+        i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
+        rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
+        ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
+        i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
+        call interp_RZ(node_list,element_list,i_elm,rr,ss, &
+                       R,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss, &
+                       Z,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
+        call check_point_is_inside_contour(R, Z, n_private_contour, R_private_contour, Z_private_contour, inside)
+        write(*,'(A,i3,A,i3,A,2f12.6,A,i2)') 'DEBUG clean_surfaces:   i_surf=', i_surf, ' part=', i_part, ' midpoint (R,Z)=', R, Z, ' inside=', inside
+        if (inside .eq. 1) then
+          i_part_save = i_part
+          exit
+        endif
+      enddo
+      write(*,'(A,i3,A,i3)') 'DEBUG clean_surfaces:   i_surf=', i_surf, ' selected part=', i_part_save
+    endif
     count = 0
     i_part = i_part_save
     do i_piece = flux_list%flux_surfaces(i_surf)%parts_index(i_part),flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1
@@ -977,20 +1000,37 @@ subroutine clean_surfaces(node_list,element_list,flux_list,n_grids)
     if (debug .eq. 2) write(*,*) 'cleaning upper private surfaces'
     i_part_save = 0
     do i_surf=n_flux+n_open+n_outer+n_inner+n_private+1,n_flux+n_open+n_outer+n_inner+n_private+n_up_priv
-      do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
-        i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
-        rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
-        ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
-        i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
-        call interp_RZ(node_list,element_list,i_elm,rr,ss, &
-                       R,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss, &
-                       Z,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
-        call check_point_is_inside_contour(R, Z, n_up_priv_contour, R_up_priv_contour, Z_up_priv_contour, inside)
-        if (inside .eq. 1) then
-          i_part_save = i_part
-          exit
-        endif
-      enddo
+      if (ES%active_xpoint .eq. SYMMETRIC_XPOINT) then
+        ! For symmetric DN, select part with highest Z (deepest in upper divertor)
+        Z_min = -1.d10
+        do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
+          i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
+          rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
+          ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
+          i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
+          call interp_RZ(node_list,element_list,i_elm,rr,ss,R_tmp2,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss,Z_tmp2,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
+          if (Z_tmp2 .gt. Z_min) then
+            Z_min = Z_tmp2
+            i_part_save = i_part
+          endif
+        enddo
+        write(*,'(A,i3,A,i3,A,f12.6)') 'DEBUG clean_surfaces: SYMMETRIC upper_priv: i_surf=', i_surf, ' selected highest-Z part=', i_part_save, ' Z_max=', Z_min
+      else
+        do i_part = 1, flux_list%flux_surfaces(i_surf)%n_parts
+          i_piece = 0.5 * (flux_list%flux_surfaces(i_surf)%parts_index(i_part) + flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1)
+          rr    = flux_list%flux_surfaces(i_surf)%s(1,i_piece)
+          ss    = flux_list%flux_surfaces(i_surf)%t(1,i_piece)
+          i_elm = flux_list%flux_surfaces(i_surf)%elm(i_piece)
+          call interp_RZ(node_list,element_list,i_elm,rr,ss, &
+                         R,dR_dr,dR_ds,dR_drs,dR_drr,dR_dss, &
+                         Z,dZ_dr,dZ_ds,dZ_drs,dZ_drr,dZ_dss)
+          call check_point_is_inside_contour(R, Z, n_up_priv_contour, R_up_priv_contour, Z_up_priv_contour, inside)
+          if (inside .eq. 1) then
+            i_part_save = i_part
+            exit
+          endif
+        enddo
+      endif
       count = 0
       i_part = i_part_save
       do i_piece = flux_list%flux_surfaces(i_surf)%parts_index(i_part),flux_list%flux_surfaces(i_surf)%parts_index(i_part+1)-1
@@ -1472,8 +1512,14 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
       endif
     enddo
   enddo
+  write(*,'(A,i3,A,i3,A,i2,A,i2)') 'DEBUG priv_lower: i_part_1=', i_part_1, ' i_part_2=', i_part_2, ' i_dir_1=', i_dir_1, ' i_dir_2=', i_dir_2
+  write(*,'(A,i8,A,i8)') 'DEBUG priv_lower: main_xp elm=', ES%i_elm_xpoint(main_xpoint), ' second_xp elm=', ES%i_elm_xpoint(second_xpoint)
+  write(*,'(A,i3,A,i5,A,i5)') 'DEBUG priv_lower: sep n_parts=', sep_list%flux_surfaces(1)%n_parts, ' part_1 pieces=', sep_list%flux_surfaces(1)%parts_index(i_part_1+1)-sep_list%flux_surfaces(1)%parts_index(i_part_1), ' part_2 pieces=', sep_list%flux_surfaces(1)%parts_index(i_part_2+1)-sep_list%flux_surfaces(1)%parts_index(i_part_2)
+  write(*,'(A,i3,A,i5,A,i5,A,i5,A,i5)') 'DEBUG priv_lower: part_1 pieces=', sep_list%flux_surfaces(1)%parts_index(i_part_1+1)-sep_list%flux_surfaces(1)%parts_index(i_part_1), ' first_i=', sep_list%flux_surfaces(1)%parts_index(i_part_1), ' last_i=', sep_list%flux_surfaces(1)%parts_index(i_part_1+1)-1, ' part_2 first_i=', sep_list%flux_surfaces(1)%parts_index(i_part_2), ' last_i=', sep_list%flux_surfaces(1)%parts_index(i_part_2+1)-1
+  write(*,'(A,i8,A,i8)') 'DEBUG priv_lower: part_1 first_elm=', sep_list%flux_surfaces(1)%elm(sep_list%flux_surfaces(1)%parts_index(i_part_1)), ' last_elm=', sep_list%flux_surfaces(1)%elm(sep_list%flux_surfaces(1)%parts_index(i_part_1+1)-1)
   ! ---Get contour by stepping along
-  start_stop = .true.
+  start_stop = .false.
+  write(*,*) 'DEBUG priv_lower: start_stop = .false. (skip pre-Xpt pieces)'
   n_private_contour = 0
   do i_part = i_part_1,i_part_2,i_part_2-i_part_1
     dir = i_dir_1
@@ -1522,6 +1568,7 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
         n_private_contour = n_private_contour + 1
         R_private_contour(n_private_contour) = ES%R_xpoint(main_xpoint)
         Z_private_contour(n_private_contour) = ES%Z_xpoint(main_xpoint)
+        write(*,'(A,i3,A,2f12.6)') 'DEBUG priv_lower: 1st X-pt pass done, n_pts=', n_private_contour, ' Xpt(R,Z)=', ES%R_xpoint(main_xpoint), ES%Z_xpoint(main_xpoint)
         start_stop = .false.
       ! --- Through the X-point the second time
       elseif ( (i_part .eq. i_part_2) .and. (i_elm .eq. ES%i_elm_xpoint(main_xpoint)) ) then
@@ -1577,10 +1624,12 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
   R_beg = R_private_contour(n_private_contour)
   Z_beg = Z_private_contour(n_private_contour)
   R_end = R_private_contour(1)
+  write(*,'(A,2f12.6,A,2f12.6,A,i5)') 'DEBUG priv_lower: before wall_close: R_beg,Z_beg=', R_beg, Z_beg, ' R_end,Z_end=', R_end, Z_end, ' n_pts_before=', n_private_contour
   Z_end = Z_private_contour(1)
   reversed = .false.
   call close_contour_with_wall(R_beg, Z_beg, R_end, Z_end, n_lim, index_lim, reversed)
   do i_piece = 1,n_lim
+  write(*,'(A,i5)') 'DEBUG priv_lower: n_lim wall points=', n_lim
     n_private_contour = n_private_contour + 1
     R_private_contour(n_private_contour) = R_wall(index_lim(i_piece))
     Z_private_contour(n_private_contour) = Z_wall(index_lim(i_piece))
@@ -1589,6 +1638,7 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
   R_private_contour(n_private_contour) = R_private_contour(1)
   Z_private_contour(n_private_contour) = Z_private_contour(1)
   
+  write(*,'(A,i5,A,2f12.6)') 'DEBUG priv_lower: after wall_close: n_pts=', n_private_contour, ' last (R,Z)=', R_private_contour(n_private_contour), Z_private_contour(n_private_contour)
   
   
   
@@ -1624,6 +1674,10 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
       endif
     enddo
   enddo
+  write(*,'(A,i3,A,i3,A,i2,A,i2)') 'DEBUG priv_upper: i_part_1=', i_part_1, ' i_part_2=', i_part_2, ' i_dir_1=', i_dir_1, ' i_dir_2=', i_dir_2
+  write(*,'(A,i8,A,i8)') 'DEBUG priv_upper: main_xp elm=', ES%i_elm_xpoint(main_xpoint), ' second_xp elm=', ES%i_elm_xpoint(second_xpoint)
+  write(*,'(A,i3)') 'DEBUG priv_upper: sep n_parts=', sep_list%flux_surfaces(1)%n_parts
+  write(*,'(A,i3,A,i5,A,i3,A,i5)') 'DEBUG priv_upper: part_1 pieces=', sep_list%flux_surfaces(1)%parts_index(i_part_1+1)-sep_list%flux_surfaces(1)%parts_index(i_part_1), ' part_2 pieces=', sep_list%flux_surfaces(1)%parts_index(i_part_2+1)-sep_list%flux_surfaces(1)%parts_index(i_part_2)
   ! ---Get contour by stepping along
   start_stop = .true.
   n_up_priv_contour = 0
@@ -1674,6 +1728,7 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
         n_up_priv_contour = n_up_priv_contour + 1
         R_up_priv_contour(n_up_priv_contour) = ES%R_xpoint(second_xpoint)
         Z_up_priv_contour(n_up_priv_contour) = ES%Z_xpoint(second_xpoint)
+        write(*,'(A,i3,A,2f12.6)') 'DEBUG priv_upper: 1st X-pt pass done, n_pts=', n_up_priv_contour, ' Xpt(R,Z)=', ES%R_xpoint(second_xpoint), ES%Z_xpoint(second_xpoint)
         start_stop = .false.
       ! --- Through the X-point the second time
       elseif ( (i_part .eq. i_part_2) .and. (i_elm .eq. ES%i_elm_xpoint(second_xpoint)) ) then
@@ -1729,6 +1784,7 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
   R_beg = R_up_priv_contour(n_up_priv_contour)
   Z_beg = Z_up_priv_contour(n_up_priv_contour)
   R_end = R_up_priv_contour(1)
+  write(*,'(A,2f12.6,A,2f12.6,A,i5)') 'DEBUG priv_upper: before wall_close: R_beg,Z_beg=', R_beg, Z_beg, ' R_end,Z_end=', R_end, Z_end, ' n_pts_before=', n_up_priv_contour
   Z_end = Z_up_priv_contour(1)
   reversed = .false.
   call close_contour_with_wall(R_beg, Z_beg, R_end, Z_end, n_lim, index_lim, reversed)
@@ -1740,6 +1796,7 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
   n_up_priv_contour = n_up_priv_contour + 1
   R_up_priv_contour(n_up_priv_contour) = R_up_priv_contour(1)
   Z_up_priv_contour(n_up_priv_contour) = Z_up_priv_contour(1)
+  write(*,'(A,i5,A,2f12.6)') 'DEBUG priv_upper: after wall_close: n_pts=', n_up_priv_contour, ' last (R,Z)=', R_up_priv_contour(n_up_priv_contour), Z_up_priv_contour(n_up_priv_contour)
   
   
   
@@ -1995,6 +2052,12 @@ subroutine get_symmetric_separatrix_contours(node_list, element_list, sep_list)
   
   
   
+  write(*,'(A,2f12.6,A,2f12.6)') 'DEBUG sym_contours: lower X-point (R,Z)=', ES%R_xpoint(1), ES%Z_xpoint(1), ' upper X-point=', ES%R_xpoint(2), ES%Z_xpoint(2)
+  write(*,'(A,f12.6,A,f12.6)') 'DEBUG sym_contours: Z_axis=', ES%Z_axis, ' R_axis=', ES%R_axis
+  write(*,'(A,i5)') 'DEBUG sym_contours: n_separatrix_contour=', n_separatrix_contour
+  write(*,'(A,i5,A,4f12.6)') 'DEBUG sym_contours: n_private_contour=', n_private_contour, ' first/last (R,Z)=', R_private_contour(1), Z_private_contour(1), R_private_contour(n_private_contour), Z_private_contour(n_private_contour)
+  write(*,'(A,i5,A,4f12.6)') 'DEBUG sym_contours: n_up_priv_contour=', n_up_priv_contour, ' first/last (R,Z)=', R_up_priv_contour(1), Z_up_priv_contour(1), R_up_priv_contour(n_up_priv_contour), Z_up_priv_contour(n_up_priv_contour)
+  write(*,'(A,i5)') 'DEBUG sym_contours: n_outer_contour=', n_outer_contour
   if (debug) then
     filename = 'plot_closed_contours.py'
     call print_py_plot_prepare_plot(filename)

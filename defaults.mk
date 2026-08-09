@@ -170,6 +170,9 @@ endif
 ifeq (model750, $(MODEL))
   DEFINES  := $(DEFINES) -Dfullmhd
 endif
+ifeq (model751, $(MODEL))
+  DEFINES  := $(DEFINES) -Dfullmhd
+endif
 
 CGDEP= generate_code                         # Pre-compute analytic expressions from mod_equations for performance
 USE_DOMM ?= 1

@@ -1195,10 +1195,10 @@ if (n_order .ge. 5) then
   enddo
   ! --- For some reason, Poisson needs to be called with -1 first (don't understand why, but gives NaN otherwise)
   call poisson(0,-1,newnode_list,newelement_list,bnd_node_list,bnd_elm_list, 3,1,1, &
-               0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+               0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
   ! --- Project variable
   call Poisson(0,0,newnode_list,newelement_list,bnd_node_list,bnd_elm_list, var_psi,var_psi,1, &
-               0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+               0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
 endif
 
 !-------------------------------- Empty Xpoints

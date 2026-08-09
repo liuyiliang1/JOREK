@@ -201,6 +201,11 @@ if (allocated(sep_list%flux_surfaces))     deallocate(sep_list%flux_surfaces)
 !-------------------------------------------------------------------------------------------!
 
 !-------------------------------- Call the routine
+write(*,'(A,i3)') 'DEBUG grid_double_xpoint_inside_wall: xcase=', xcase
+write(*,'(A,i5)') 'DEBUG grid_double_xpoint_inside_wall: ES%active_xpoint=', ES%active_xpoint
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt1 (R,Z)=', ES%R_xpoint(1), ES%Z_xpoint(1)
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt2 (R,Z)=', ES%R_xpoint(2), ES%Z_xpoint(2)
+write(*,'(A,6i5)') 'DEBUG grid_double_xpoint_inside_wall: n_grids(1,3:7)=', n_grids(1), n_grids(3), n_grids(4), n_grids(5), n_grids(6), n_grids(7)
 call reorder_flux_surfaces(node_list, element_list, flux_list, .true., ifail)
 call clean_surfaces(node_list,element_list,flux_list,n_grids)
 call find_strategic_points_advanced(node_list, element_list, flux_list, xcase, force_horizontal_Xline, n_grids, stpts)
