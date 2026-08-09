@@ -26,10 +26,16 @@ real*8,                       intent(in)    :: sigmas(22)
 integer,                      intent(in)    :: which_leg ! 1=LowerInner, 2=OuterInner, 3=LowerUpper, 4=OuterUpper
 
 ! --- local variables
-real*8, allocatable :: delta(:)
-real*8, allocatable :: R_polar(:,:,:),Z_polar(:,:,:)
-real*8, allocatable :: R_polar_smooth(:,:,:),Z_polar_smooth(:,:,:)
+real*8, allocatable :: delta(:), delta1(:), delta2(:,:)
+real*8, allocatable :: R_polar(:,:,:), Z_polar(:,:,:)
+real*8, allocatable :: R_polar_smooth(:,:,:), Z_polar_smooth(:,:,:)
 integer             :: i, j, k, index, i_sep, pieces, i_elm
+!-------------------------for EAST leg2
+integer             :: i_mid, nk   ! Used for users to independently define an intermediate turning point
+real*8, allocatable :: R_seg_mid(:), Z_seg_mid(:)
+integer             :: i_mid2
+real*8, allocatable :: R_seg_mid2(:,:), Z_seg_mid2(:,:)
+!---------------------------------
 integer             :: n_surf_tot, i_surf_tmp
 integer,allocatable :: i_flux(:)
 integer             :: n_flux, n_tht,  n_open,   n_outer,   n_inner
@@ -68,11 +74,11 @@ character*256       :: plot_filename
 character*1         :: char_tmp
 logical, parameter  :: plot_grid = .true.
 
-
+!===============================================================================
 write(*,*) '*****************************************'
 write(*,*) '* X-point grid inside wall :            *'
 write(*,*) '*****************************************'
-write(*,*) '                 Define leg part of grid',which_leg
+write(*,*) '                 Define leg part of grid', which_leg
 
 SIG_theta    = sigmas(2) 
 SIG_leg_0    = sigmas(8) ; SIG_leg_1    = sigmas(9) 
@@ -86,6 +92,8 @@ n_leg_out = n_grids(10); n_up_leg_out = n_grids(11)
 
 nwpts%k_cross = 0
 
+i_mid  = 0
+i_mid2 = 0
 
 !-------------------------------- Allocate data structures for new nodes and initialize them
 newnode_list%n_nodes = 0
@@ -117,8 +125,6 @@ do i = 1, n_elements_max
   newelement_list%element(i)%nref         = 0
 end do
 
-
-
 !------------------------------------------------------------------------------------------------------------------------!
 !************************************************************************************************************************!
 !************************************************************************************************************************!
@@ -127,12 +133,9 @@ end do
 !************************************************************************************************************************!
 !------------------------------------------------------------------------------------------------------------------------!
 
-
-
 !---------------------------------------!
 !------- Extrapolation points ----------!
 !---------------------------------------!
-
 
 ! --- Determine end points of surfaces
 
@@ -335,10 +338,12 @@ endif
 allocate(seg(n_seg), R_seg(n_seg), Z_seg(n_seg))
 allocate(R_seg_surf(n_surf_tot,n_seg), Z_seg_surf(n_surf_tot,n_seg))
 allocate(R_seg_smooth(3,n_seg), Z_seg_smooth(3,n_seg))
+allocate(R_seg_mid(n_seg), Z_seg_mid(n_seg))
+allocate(R_seg_mid2(n_seg,5), Z_seg_mid2(n_seg,5))
 
 ! --- We cut the end to ensure we remain inside the domain...
 distance_leg = sqrt( (R_end(2)-R_beg(2))**2 + (Z_end(2)-Z_beg(2))**2 )
-leg_cut = 1.d0 - 1.d-3 / distance_leg ! we cut by ~1mmm
+leg_cut = 1.d0 - 1.d-3 / distance_leg ! we cut by ~1mm
 
 ! --- Segment the private, separatrix and SOL surfaces
 do i = 1,n_surf_tot
@@ -351,10 +356,11 @@ do i = 1,n_surf_tot
   else if (i .eq. i_sep) then
     sig_tmp = 1.3d0*SIG_1
   endif
-  call meshac2(n_seg,seg,0.d0,1.d0,sig_tmp,SIG_0,0.6d0,1.0d0)
-  seg = leg_cut*seg ! we cut the end to ensure we remain inside the domain...
+  call meshac2(n_seg, seg, 0.d0, 1.d0, sig_tmp, SIG_0, 0.6d0, 1.0d0)
+  seg = leg_cut * seg
   xpoint_surface = .false.
   if (i .eq. i_sep) xpoint_surface = .true.
+  
   ! --- The end points
   if (i .eq. 1) then
     R_beg_tmp = R_beg(1) ; R_end_tmp = R_end(1)
@@ -368,15 +374,17 @@ do i = 1,n_surf_tot
   else
     ! --- The Beg point
     if (i .lt. i_sep) then
-      tht_x = atan2(Z_beg(1)-Z_beg(2),R_beg(1)-R_beg(2))
+      tht_x = atan2(Z_beg(1)-Z_beg(2), R_beg(1)-R_beg(2))
     else
-      tht_x = atan2(Z_beg(3)-Z_beg(2),R_beg(3)-R_beg(2))
+      tht_x = atan2(Z_beg(3)-Z_beg(2), R_beg(3)-R_beg(2))
     endif
     if (tht_x .lt. 0.d0) tht_x = tht_x + 2.d0 * PI
-    call find_theta_surface(node_list,element_list,flux_list,i_flux(i),tht_x,R_beg(2),Z_beg(2),i_elm_find,s_find,t_find,i_find)
-    do k=1,i_find
-      call interp_RZ(node_list,element_list,i_elm_find(k),s_find(k),t_find(k),R1,dR1_dr,dR1_ds,dR1_drs,dR1_drr,dR1_dss, &
-                                                                              Z1,dZ1_dr,dZ1_ds,dZ1_drs,dZ1_drr,dZ1_dss)
+    call find_theta_surface(node_list, element_list, flux_list, i_flux(i), tht_x, R_beg(2), Z_beg(2), &
+                             i_elm_find, s_find, t_find, i_find)
+    do k = 1, i_find
+      call interp_RZ(node_list, element_list, i_elm_find(k), s_find(k), t_find(k), &
+                     R1, dR1_dr, dR1_ds, dR1_drs, dR1_drr, dR1_dss, &
+                     Z1, dZ1_dr, dZ1_ds, dZ1_drs, dZ1_drr, dZ1_dss)
       R_beg_tmp = R1
       Z_beg_tmp = Z1
       if ( (Z_beg_tmp .le. ES%Z_xpoint(1)) .and. (which_leg .le. 2) .and. (i .lt. i_sep) ) exit
@@ -388,19 +396,19 @@ do i = 1,n_surf_tot
     enddo
     ! --- The End point
     count = 0
-    do i_part=1,flux_list%flux_surfaces(i_flux(i))%n_parts
+    do i_part = 1, flux_list%flux_surfaces(i_flux(i))%n_parts
       edge_piece(1) = flux_list%flux_surfaces(i_flux(i))%parts_index(i_part)
       edge_side(1)  = 1
       edge_piece(2) = flux_list%flux_surfaces(i_flux(i))%parts_index(i_part+1)-1
       edge_side(2)  = 3
-      do k=1,2
-        rr1   = flux_list%flux_surfaces(i_flux(i))%s(edge_side(k),edge_piece(k))
-        ss1   = flux_list%flux_surfaces(i_flux(i))%t(edge_side(k),edge_piece(k))
+      do k = 1, 2
+        rr1   = flux_list%flux_surfaces(i_flux(i))%s(edge_side(k), edge_piece(k))
+        ss1   = flux_list%flux_surfaces(i_flux(i))%t(edge_side(k), edge_piece(k))
         i_elm = flux_list%flux_surfaces(i_flux(i))%elm(edge_piece(k))
-        call interp_RZ(node_list,element_list,i_elm,rr1,ss1,R1,dR1_dr,dR1_ds,dR1_drs,dR1_drr,dR1_dss, &
-                                                            Z1,dZ1_dr,dZ1_ds,dZ1_drs,dZ1_drr,dZ1_dss)
+        call interp_RZ(node_list, element_list, i_elm, rr1, ss1, &
+                       R1, dR1_dr, dR1_ds, dR1_drs, dR1_drr, dR1_dss, &
+                       Z1, dZ1_dr, dZ1_ds, dZ1_drs, dZ1_drr, dZ1_dss)
         if (which_leg .eq. 1) then
-          !if ( (R1 .lt. ES%R_xpoint(1)) .and. (Z1 .lt. ES%Z_axis) ) then
           if (Z1 .lt. ES%Z_axis) then
             count = count + 1
             R_tmp(count) = R1
@@ -408,7 +416,6 @@ do i = 1,n_surf_tot
           endif
         endif
         if (which_leg .eq. 2) then
-          !if ( (R1 .gt. ES%R_xpoint(1)) .and. (Z1 .lt. ES%Z_axis) ) then
           if (Z1 .lt. ES%Z_axis) then
             count = count + 1
             R_tmp(count) = R1
@@ -416,7 +423,6 @@ do i = 1,n_surf_tot
           endif
         endif
         if (which_leg .eq. 3) then
-          !if ( (R1 .lt. ES%R_xpoint(2)) .and. (Z1 .gt. ES%Z_axis) ) then
           if (Z1 .gt. ES%Z_axis) then
             count = count + 1
             R_tmp(count) = R1
@@ -424,7 +430,6 @@ do i = 1,n_surf_tot
           endif
         endif
         if (which_leg .eq. 4) then
-          !if ( (R1 .gt. ES%R_xpoint(2)) .and. (Z1 .gt. ES%Z_axis) ) then
           if (Z1 .gt. ES%Z_axis) then
             count = count + 1
             R_tmp(count) = R1
@@ -433,7 +438,8 @@ do i = 1,n_surf_tot
         endif
       enddo
       if (count .ge. 2) then
-        if ( (abs(R_tmp(count)-R_tmp(count-1)) .lt. 1.d-7) .and. (abs(Z_tmp(count)-Z_tmp(count-1)) .lt. 1.d-7) ) then
+        if ( (abs(R_tmp(count)-R_tmp(count-1)) .lt. 1.d-7) .and. &
+             (abs(Z_tmp(count)-Z_tmp(count-1)) .lt. 1.d-7) ) then
           count = count - 2
         endif
       endif
@@ -454,7 +460,7 @@ do i = 1,n_surf_tot
     endif
     if (count .ne. 1) then
       diff_min = 1.d10
-      do j=1,count
+      do j = 1, count
         if (which_leg .le. 2) then
           diff = sqrt( (R_tmp(j)-ES%R_xpoint(1))**2 + (Z_tmp(j)-ES%Z_xpoint(1))**2 )
         else
@@ -473,9 +479,10 @@ do i = 1,n_surf_tot
     Z_end_tmp = Z_tmp(1)
   endif
   ! --- Segment surface
-  call segment_surface_length(node_list,element_list,flux_list%flux_surfaces(i_flux(i)), &
-                              R_beg_tmp, Z_beg_tmp, R_end_tmp, Z_end_tmp, n_seg, seg, R_seg, Z_seg, xpoint_surface)
-  do j = 1,n_seg
+  call segment_surface_length(node_list, element_list, flux_list%flux_surfaces(i_flux(i)), &
+                              R_beg_tmp, Z_beg_tmp, R_end_tmp, Z_end_tmp, &
+                              n_seg, seg, R_seg, Z_seg, xpoint_surface)
+  do j = 1, n_seg
     R_seg_surf(i,j) = R_seg(j)
     Z_seg_surf(i,j) = Z_seg(j)
   enddo
@@ -490,64 +497,131 @@ R_seg_surf(n_surf_tot,1) = R_beg(3)
 Z_seg_surf(n_surf_tot,1) = Z_beg(3)
 
 ! --- Using polar at every node is safer if target is uneven, but it looks nicer with simpler polar
-do i = 1,3
+do i = 1, 3
   if (i .eq. 1) i_surf_tmp = 1
   if (i .eq. 2) i_surf_tmp = i_sep
   if (i .eq. 3) i_surf_tmp = n_surf_tot
-  do j = 1,n_seg
-    R_seg_smooth(i,j) = R_seg_surf(i_surf_tmp,j)
-    Z_seg_smooth(i,j) = Z_seg_surf(i_surf_tmp,j)
+  do j = 1, n_seg
+    R_seg_smooth(i,j) = R_seg_surf(i_surf_tmp, j)
+    Z_seg_smooth(i,j) = Z_seg_surf(i_surf_tmp, j)
   enddo
 enddo
 
+!------------------------- User-defined intermediate surfaces (i_mid / i_mid2) -----------------
+! if (which_leg .eq. 1) then
+!   i_mid = 9   ! example value; adjust as needed
+!   ! i_mid2 = n_surf_tot-1
+! elseif (which_leg .eq. 2) then
+!    i_mid = n_surf_tot-10!14
+! elseif (which_leg .eq. 3) then
+!   i_mid = 11
+!   ! i_mid2 = n_surf_tot-1
+! elseif (which_leg .eq. 4) then
+!    i_mid = n_surf_tot-10!14
+! endif
+!------------------------59950-----------
+!  if(which_leg.eq.1)then
+! !   i_mid=n_surf_tot- 11
+!  elseif(which_leg.eq.2)then
+!   ! i_mid=n_surf_tot- 19!13
+!  elseif(which_leg.eq.3)then
+!    i_mid=n_surf_tot- 8  !12
+!    i_mid2=n_surf_tot- 3 !5
+!  elseif(which_leg.eq.4)then
+!    i_mid=n_surf_tot- 6  !10
+!    i_mid2=n_surf_tot- 2 !3
+!  endif
 
+if (i_mid .gt. 0) then
+  do j = 1, n_seg
+    R_seg_mid(j) = R_seg_surf(i_mid, j)
+    Z_seg_mid(j) = Z_seg_surf(i_mid, j)
+  enddo
+endif
+if (i_mid .eq. 0 .and. i_mid2 .gt. 0) then
+  i_mid = i_mid2
+  i_mid2 = 0
+  do j = 1, n_seg
+    R_seg_mid(j) = R_seg_surf(i_mid, j)
+    Z_seg_mid(j) = Z_seg_surf(i_mid, j)
+  enddo
+endif
+ !-----------------------------------59950
+! if(i_mid2.gt.0)then
+!   do j = 1,n_seg
+!     R_seg_mid2(j,1) = R_seg_smooth(1,j)
+!     Z_seg_mid2(j,1) = z_seg_smooth(1,j)
+!     R_seg_mid2(j,2) = R_seg_smooth(2,j)
+!     Z_seg_mid2(j,2) = Z_seg_smooth(2,j)
+!     R_seg_mid2(j,3) = R_seg_surf(i_mid,j)
+!     Z_seg_mid2(j,3) = Z_seg_surf(i_mid,j)
+!     R_seg_mid2(j,4) = R_seg_surf(i_mid2,j)
+!     Z_seg_mid2(j,4) = Z_seg_surf(i_mid2,j)
+!     R_seg_mid2(j,5) = R_seg_smooth(3,j)
+!     Z_seg_mid2(j,5) = Z_seg_smooth(3,j)
+!   enddo
+! endif
+!----------------XL_open-----------------
+if (i_mid2 .gt. 0) then
+  do j = 1, n_seg
+    R_seg_mid2(j,1) = R_seg_smooth(1,j)
+    Z_seg_mid2(j,1) = Z_seg_smooth(1,j)
+    R_seg_mid2(j,3) = R_seg_surf(i_mid, j)
+    Z_seg_mid2(j,3) = Z_seg_surf(i_mid, j)
+    R_seg_mid2(j,2) = R_seg_smooth(2,j)
+    Z_seg_mid2(j,2) = Z_seg_smooth(2,j)
+    R_seg_mid2(j,4) = R_seg_surf(i_mid2, j)
+    Z_seg_mid2(j,4) = Z_seg_surf(i_mid2, j)
+    R_seg_mid2(j,5) = R_seg_smooth(3,j)
+    Z_seg_mid2(j,5) = Z_seg_smooth(3,j)
+  enddo
+endif
 
-!----------------------------------- Print a python file that plots a cross with the 4 nodes of each element
+!----------------------------------- Print a python file that plots the surfaces
 if (plot_grid) then
-  open(101,file='plot_leg.py')
-    write(101,'(A)')                '#!/usr/bin/env python'
-    write(101,'(A)')                'import numpy as N'
-    write(101,'(A)')                'import pylab'
-    write(101,'(A)')                'def main():'
-    do k=1,n_surf_tot
-      write(101,'(A,i6,A)')         ' r = N.zeros(',n_seg,')'
-      write(101,'(A,i6,A)')         ' z = N.zeros(',n_seg,')'
-      do i=1,n_seg
-        write(101,'(A,i6,A,f15.4)') ' r[',i-1,'] = ',R_seg_surf(k,i)
-        write(101,'(A,i6,A,f15.4)') ' z[',i-1,'] = ',Z_seg_surf(k,i)
+  write(char_tmp, '(i1)') which_leg
+  open(101, file='plot_leg'//char_tmp//'.py')
+    write(101, '(A)') '#!/usr/bin/env python'
+    write(101, '(A)') 'import numpy as N'
+    write(101, '(A)') 'import pylab'
+    write(101, '(A)') 'def main():'
+    do k = 1, n_surf_tot
+      write(101, '(A,i6,A)') ' r = N.zeros(', n_seg, ')'
+      write(101, '(A,i6,A)') ' z = N.zeros(', n_seg, ')'
+      do i = 1, n_seg
+        write(101, '(A,i6,A,f15.4)') ' r[', i-1, '] = ', R_seg_surf(k,i)
+        write(101, '(A,i6,A,f15.4)') ' z[', i-1, '] = ', Z_seg_surf(k,i)
       enddo
-      write(101,'(A)')              ' pylab.plot(r,z, "b-x")'
-      write(101,'(A)')              ' pylab.plot(r[0],z[0], "rx")'
+      write(101, '(A)') ' pylab.plot(r,z, "b-x")'
+      write(101, '(A)') ' pylab.plot(r[0],z[0], "rx")'
     enddo
-    write(101,'(A)')                ' pylab.axis("equal")'
-    write(101,'(A)')                ' pylab.show()'
-    write(101,'(A)')                ' '
-    write(101,'(A)')                'main()'
+    write(101, '(A)') ' pylab.axis("equal")'
+    write(101, '(A)') ' pylab.show()'
+    write(101, '(A)') ' '
+    write(101, '(A)') 'main()'
   close(101)
 endif
 
-
-
 if (plot_grid) then
-  plot_filename = 'plot_leg_surf.py'
+  write(char_tmp, '(i1)') which_leg
+  plot_filename = 'plot_leg'//char_tmp//'_surf.py'
   call print_py_plot_prepare_plot(plot_filename)
-  open(101,file=plot_filename,position='append')
-  do k=1,n_surf_tot
-    write(101,'(A,i6,A)')         ' r = N.zeros(',n_seg,')'
-    write(101,'(A,i6,A)')         ' z = N.zeros(',n_seg,')'
-    do i=1,n_seg
-      write(101,'(A,i6,A,f15.4)') ' r[',i-1,'] = ',R_seg_surf(k,i)
-      write(101,'(A,i6,A,f15.4)') ' z[',i-1,'] = ',Z_seg_surf(k,i)
+  open(101, file=plot_filename, position='append')
+  do k = 1, n_surf_tot
+    write(101, '(A,i6,A)') ' r = N.zeros(', n_seg, ')'
+    write(101, '(A,i6,A)') ' z = N.zeros(', n_seg, ')'
+    do i = 1, n_seg
+      write(101, '(A,i6,A,f15.4)') ' r[', i-1, '] = ', R_seg_surf(k,i)
+      write(101, '(A,i6,A,f15.4)') ' z[', i-1, '] = ', Z_seg_surf(k,i)
     enddo
-    write(101,'(A)')              ' pylab.plot(r,z, "b-x")'
-    write(101,'(A)')              ' pylab.plot(r[0],z[0], "rx")'
+    write(101, '(A)') ' pylab.plot(r,z, "b-x")'
+    write(101, '(A)') ' pylab.plot(r[0],z[0], "rx")'
   enddo
   close(101)
   call print_py_plot_ordered_flux_surfaces(plot_filename, node_list, element_list, flux_list, 'r', .false.)
   call print_py_plot_wall(plot_filename)
   call print_py_plot_finish_plot(plot_filename)
 endif
-
 
 !------------------------------------------------------------------------------------------------------------------------!
 !************************************************************************************************************************!
@@ -558,157 +632,170 @@ endif
 !------------------------------------------------------------------------------------------------------------------------!
 write(*,*) '                 Find crossings between coordinate lines'
 
-
-
-
-
 !--------------------------------------------------------------------------!
 !------------------- Construct polar coordinate lines ---------------------!
 !--------------------------------------------------------------------------!
+nk = 3
+if (i_mid .gt. 0) nk = 5
+if (i_mid2 .gt. 0 .and. i_mid .gt. 0) nk = 7
 
-allocate (delta(n_seg))
-allocate (R_polar_smooth(3,4,n_seg),Z_polar_smooth(3,4,n_seg))
-allocate (R_polar(n_surf_tot-1,4,n_seg),Z_polar(n_surf_tot-1,4,n_seg))
+allocate (delta(n_seg), delta1(n_seg), delta2(n_seg,3))
+allocate (R_polar_smooth(nk, 4, n_seg), Z_polar_smooth(nk, 4, n_seg))
+allocate (R_polar(n_surf_tot-1, 4, n_seg), Z_polar(n_surf_tot-1, 4, n_seg))
 
 ! --- The safe polar coords
-do i=1,n_seg
-  call create_polar_lines_simple(n_surf_tot, R_seg_surf(1:n_surf_tot,i), Z_seg_surf(1:n_surf_tot,i), R_polar(1:n_surf_tot-1,1:4,i) , Z_polar(1:n_surf_tot-1,1:4,i) )
+do i = 1, n_seg
+  call create_polar_lines_simple(n_surf_tot, R_seg_surf(1:n_surf_tot,i), Z_seg_surf(1:n_surf_tot,i), &
+                                  R_polar(1:n_surf_tot-1, 1:4, i), Z_polar(1:n_surf_tot-1, 1:4, i))
 enddo
 
 ! --- The smooth polar coords
-delta = 0.1
+delta  = 0.1
 delta(1) = 0.d0  
 delta(2) = 0.05d0
-call create_polar_lines(n_seg, R_seg_smooth(1,1:n_seg), Z_seg_smooth(1,1:n_seg), &
-                               R_seg_smooth(2,1:n_seg), Z_seg_smooth(2,1:n_seg), &
-                               R_seg_smooth(3,1:n_seg), Z_seg_smooth(3,1:n_seg), &
-                               delta, R_polar_smooth, Z_polar_smooth)
-deallocate (delta)
+delta(n_seg) = 0.d0
+if (i_mid .eq. 0 .and. i_mid2 .eq. 0) then
+  call create_polar_lines(n_seg, &
+                          R_seg_smooth(1,1:n_seg), Z_seg_smooth(1,1:n_seg), &
+                          R_seg_smooth(2,1:n_seg), Z_seg_smooth(2,1:n_seg), &
+                          R_seg_smooth(3,1:n_seg), Z_seg_smooth(3,1:n_seg), &
+                          delta, R_polar_smooth, Z_polar_smooth)
+elseif (i_mid2 .eq. 0) then
+  delta1 = 0.1
+  delta1(1)=0.0
+  delta1(2)=0.1d0
+  delta1(n_seg)=0.0
+  if (which_leg .eq. 1 .or. which_leg .eq. 3) then
+    call create_polar_lines_4(n_seg, &
+                              R_seg_smooth(1,1:n_seg), Z_seg_smooth(1,1:n_seg), &
+                              R_seg_mid(1:n_seg)     , Z_seg_mid(1:n_seg)     , &
+                              R_seg_smooth(2,1:n_seg), Z_seg_smooth(2,1:n_seg), &
+                              R_seg_smooth(3,1:n_seg), Z_seg_smooth(3,1:n_seg), &
+                              delta, delta1, R_polar_smooth, Z_polar_smooth)
+  elseif (which_leg .eq. 2 .or. which_leg .eq. 4) then
+    call create_polar_lines_4(n_seg, &
+                              R_seg_smooth(1,1:n_seg), Z_seg_smooth(1,1:n_seg), &
+                              R_seg_smooth(2,1:n_seg), Z_seg_smooth(2,1:n_seg), &
+                              R_seg_mid(1:n_seg)     , Z_seg_mid(1:n_seg)     , &
+                              R_seg_smooth(3,1:n_seg), Z_seg_smooth(3,1:n_seg), &
+                              delta, delta1, R_polar_smooth, Z_polar_smooth)
+  endif
+elseif (i_mid .gt. 0 .and. i_mid2 .gt. 0) then
+  delta2 = 0.1
+  delta2(1,:)=0.0
+ ! delta2(2,:)=0.05d0
+  delta2(n_seg,:)=0.0
+  call create_polar_lines_5(n_seg, R_seg_mid2(1:n_seg,1:5), Z_seg_mid2(1:n_seg,1:5), &
+                            delta2(1:n_seg,1:3), R_polar_smooth, Z_polar_smooth)
+endif
 
-do i=1,3
-  do j=1,n_seg
-    nwpts%R_polar(i,1:4,j) = R_polar_smooth(i,1:4,j)
-    nwpts%Z_polar(i,1:4,j) = Z_polar_smooth(i,1:4,j)
+deallocate (delta, delta1, delta2)
+
+do i = 1, nk
+  do j = 1, n_seg
+    nwpts%R_polar(i, 1:4, j) = R_polar_smooth(i, 1:4, j)
+    nwpts%Z_polar(i, 1:4, j) = Z_polar_smooth(i, 1:4, j)
   enddo
 enddo
-
 
 !--------------------------------------------------------------------------!
 !--------- Find grid_points from crossing of coordinate lines -------------!
 !--------------------------------------------------------------------------!
 
-
 !----------------------------------- The main part (without legs, outer and inner)
-do i=1,n_surf_tot
+do i = 1, n_surf_tot
   i_surf_tmp = i_flux(i)
-  do j=1, n_seg
-    
+  do j = 1, n_seg
     ! --- First try with the smooth polar lines
-    do k=1,3
-      nwpts%R_polar(k,1:4,j) = R_polar_smooth(k,1:4,j)
-      nwpts%Z_polar(k,1:4,j) = Z_polar_smooth(k,1:4,j)
+    do k = 1, nk
+      nwpts%R_polar(k, 1:4, j) = R_polar_smooth(k, 1:4, j)
+      nwpts%Z_polar(k, 1:4, j) = Z_polar_smooth(k, 1:4, j)
     enddo
-    do k=1,3     ! 3 line pieces per coordinate line
-
-      call from_polar_to_cubic(R_polar_smooth(k,1:4,j),R_cub1d)
-      call from_polar_to_cubic(Z_polar_smooth(k,1:4,j),Z_cub1d)
-      call find_crossing(node_list,element_list,flux_list,i_surf_tmp,R_cub1d,Z_cub1d, &
-                         nwpts%RR_new(i,j),nwpts%ZZ_new(i,j),nwpts%ielm_flux(i,j),&
-                         nwpts%s_flux(i,j),nwpts%t_flux(i,j),nwpts%t_tht(i,j),ifail, .true.)
+    do k = 1, nk
+      call from_polar_to_cubic(R_polar_smooth(k, 1:4, j), R_cub1d)
+      call from_polar_to_cubic(Z_polar_smooth(k, 1:4, j), Z_cub1d)
+      call find_crossing(node_list, element_list, flux_list, i_surf_tmp, &
+                         R_cub1d, Z_cub1d, &
+                         nwpts%RR_new(i,j), nwpts%ZZ_new(i,j), nwpts%ielm_flux(i,j), &
+                         nwpts%s_flux(i,j), nwpts%t_flux(i,j), nwpts%t_tht(i,j), ifail, .true.)
       ! --- Readjust to make sure we are inside element.
-      if ( (nwpts%s_flux(i,j) .lt. 0.d0) .or. (nwpts%s_flux(i,j) .gt. 1.d0) .or. (nwpts%t_flux(i,j) .lt. 0.d0) .or. (nwpts%t_flux(i,j) .gt. 1.d0) ) then
+      if ( (nwpts%s_flux(i,j) .lt. 0.d0) .or. (nwpts%s_flux(i,j) .gt. 1.d0) .or. &
+           (nwpts%t_flux(i,j) .lt. 0.d0) .or. (nwpts%t_flux(i,j) .gt. 1.d0) ) then
         if (nwpts%s_flux(i,j) .lt. 0.d0) nwpts%s_flux(i,j) = 0.d0
         if (nwpts%s_flux(i,j) .gt. 1.d0) nwpts%s_flux(i,j) = 1.d0
         if (nwpts%t_flux(i,j) .lt. 0.d0) nwpts%t_flux(i,j) = 0.d0
         if (nwpts%t_flux(i,j) .gt. 1.d0) nwpts%t_flux(i,j) = 1.d0
-        call interp_RZ(node_list,element_list,nwpts%ielm_flux(i,j),nwpts%s_flux(i,j),nwpts%t_flux(i,j),&
-                       R1,dR1_dr,dR1_ds,dR1_drs,dR1_drr,dR1_dss,    &
-                       Z1,dZ1_dr,dZ1_ds,dZ1_drs,dZ1_drr,dZ1_dss)
+        call interp_RZ(node_list, element_list, nwpts%ielm_flux(i,j), &
+                       nwpts%s_flux(i,j), nwpts%t_flux(i,j), &
+                       R1, dR1_dr, dR1_ds, dR1_drs, dR1_drr, dR1_dss, &
+                       Z1, dZ1_dr, dZ1_ds, dZ1_drs, dZ1_drr, dZ1_dss)
         nwpts%RR_new(i,j) = R1
         nwpts%ZZ_new(i,j) = Z1
       endif
-      
       if (ifail .eq. 0) then
         nwpts%k_cross(i,j) = k
         exit
       endif
-
     enddo
 
     ! --- If the smooth polar lines don't work, try the safe ones
     if (ifail .ne. 0) then
-      do k=1,n_surf_tot-1
-        nwpts%R_polar(k,1:4,j) = R_polar(k,1:4,j)
-        nwpts%Z_polar(k,1:4,j) = Z_polar(k,1:4,j)
+      do k = 1, n_surf_tot-1
+        nwpts%R_polar(k, 1:4, j) = R_polar(k, 1:4, j)
+        nwpts%Z_polar(k, 1:4, j) = Z_polar(k, 1:4, j)
       enddo
-      do k=1,n_surf_tot-1  ! 3 line pieces per coordinate line
-
-        call from_polar_to_cubic(R_polar(k,1:4,j),R_cub1d)
-        call from_polar_to_cubic(Z_polar(k,1:4,j),Z_cub1d)
-        call find_crossing(node_list,element_list,flux_list,i_surf_tmp,R_cub1d,Z_cub1d, &
-                           nwpts%RR_new(i,j),nwpts%ZZ_new(i,j),nwpts%ielm_flux(i,j),&
-                           nwpts%s_flux(i,j),nwpts%t_flux(i,j),nwpts%t_tht(i,j),ifail,.true.)
-        ! --- Readjust to make sure we are inside element.
-        if ( (nwpts%s_flux(i,j) .lt. 0.d0) .or. (nwpts%s_flux(i,j) .gt. 1.d0) .or. (nwpts%t_flux(i,j) .lt. 0.d0) .or. (nwpts%t_flux(i,j) .gt. 1.d0) ) then
+      do k = 1, n_surf_tot-1
+        call from_polar_to_cubic(R_polar(k, 1:4, j), R_cub1d)
+        call from_polar_to_cubic(Z_polar(k, 1:4, j), Z_cub1d)
+        call find_crossing(node_list, element_list, flux_list, i_surf_tmp, &
+                           R_cub1d, Z_cub1d, &
+                           nwpts%RR_new(i,j), nwpts%ZZ_new(i,j), nwpts%ielm_flux(i,j), &
+                           nwpts%s_flux(i,j), nwpts%t_flux(i,j), nwpts%t_tht(i,j), ifail, .true.)
+        if ( (nwpts%s_flux(i,j) .lt. 0.d0) .or. (nwpts%s_flux(i,j) .gt. 1.d0) .or. &
+             (nwpts%t_flux(i,j) .lt. 0.d0) .or. (nwpts%t_flux(i,j) .gt. 1.d0) ) then
           if (nwpts%s_flux(i,j) .lt. 0.d0) nwpts%s_flux(i,j) = 0.d0
           if (nwpts%s_flux(i,j) .gt. 1.d0) nwpts%s_flux(i,j) = 1.d0
           if (nwpts%t_flux(i,j) .lt. 0.d0) nwpts%t_flux(i,j) = 0.d0
           if (nwpts%t_flux(i,j) .gt. 1.d0) nwpts%t_flux(i,j) = 1.d0
-          call interp_RZ(node_list,element_list,nwpts%ielm_flux(i,j),nwpts%s_flux(i,j),nwpts%t_flux(i,j),&
-                         R1,dR1_dr,dR1_ds,dR1_drs,dR1_drr,dR1_dss,    &
-                         Z1,dZ1_dr,dZ1_ds,dZ1_drs,dZ1_drr,dZ1_dss)
+          call interp_RZ(node_list, element_list, nwpts%ielm_flux(i,j), &
+                         nwpts%s_flux(i,j), nwpts%t_flux(i,j), &
+                         R1, dR1_dr, dR1_ds, dR1_drs, dR1_drr, dR1_dss, &
+                         Z1, dZ1_dr, dZ1_ds, dZ1_drs, dZ1_drr, dZ1_dss)
           nwpts%RR_new(i,j) = R1
           nwpts%ZZ_new(i,j) = Z1
         endif
-        
         if (ifail .eq. 0) then
           nwpts%k_cross(i,j) = k
           exit
         endif
-
       enddo
-
       if (ifail .ne. 0) then
-        write(*,'(A,I6,I6,I6,F20.10)') ' WARNING node not found for leg grid : ',ifail,i,j
+        write(*,'(A,I6,I6,I6,F20.10)') ' WARNING node not found for leg grid : ', ifail, i, j
       endif
     endif
-      
   enddo
 enddo
 
-
 if (plot_grid) then
-  open(101,file='plot_leg_nodes.py')
-    write(101,'(A)')                '#!/usr/bin/env python'
-    write(101,'(A)')                'import numpy as N'
-    write(101,'(A)')                'import pylab'
-    write(101,'(A)')                'def main():'
-    do i=1,n_surf_tot
-      do j=1,n_seg
-        write(101,'(A,f15.4)') ' r = ',nwpts%RR_new(i,j)
-        write(101,'(A,f15.4)') ' z = ',nwpts%ZZ_new(i,j)
-        write(101,'(A)')            ' pylab.plot(r,z, "bx")'
+  write(char_tmp, '(i1)') which_leg
+  open(101, file='plot_leg'//char_tmp//'_nodes.py')
+    write(101, '(A)') '#!/usr/bin/env python'
+    write(101, '(A)') 'import numpy as N'
+    write(101, '(A)') 'import pylab'
+    write(101, '(A)') 'def main():'
+    do i = 1, n_surf_tot
+      do j = 1, n_seg
+        write(101, '(A,f15.4)') ' r = ', nwpts%RR_new(i,j)
+        write(101, '(A,f15.4)') ' z = ', nwpts%ZZ_new(i,j)
+        write(101, '(A)')       ' pylab.plot(r,z, "bx")'
       enddo
     enddo
-    write(101,'(A)')                ' pylab.axis("equal")'
-    write(101,'(A)')                ' pylab.show()'
-    write(101,'(A)')                ' '
-    write(101,'(A)')                'main()'
+    write(101, '(A)') ' pylab.axis("equal")'
+    write(101, '(A)') ' pylab.show()'
+    write(101, '(A)') ' '
+    write(101, '(A)') 'main()'
   close(101)
 endif
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 !------------------------------------------------------------------------------------------------------------------------!
 !************************************************************************************************************************!
@@ -719,53 +806,48 @@ endif
 !------------------------------------------------------------------------------------------------------------------------!
 write(*,*) '                 Defining new nodes'
 
-
-
 !-------------------------------------------------------------------------------------------!
 !-------------------------------------- The Xpoints ----------------------------------------!
 !-------------------------------------------------------------------------------------------!
-
-! THIS ADDS FOUR NODES AT EACH XPOINTS, PLEASE SEE create_x_node FOR MORE DETAILS
 if (xcase .eq. LOWER_XPOINT) then
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
 if (xcase .eq. UPPER_XPOINT) then
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
-if ( (xcase .eq. DOUBLE_NULL) .and. ( (ES%active_xpoint .eq. LOWER_XPOINT) .or. (ES%active_xpoint .eq. SYMMETRIC_XPOINT) ) ) then ! Put lower Xpoint first
+if ( (xcase .eq. DOUBLE_NULL) .and. ( (ES%active_xpoint .eq. LOWER_XPOINT) .or. &
+                                       (ES%active_xpoint .eq. SYMMETRIC_XPOINT) ) ) then
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
-if ( (xcase .eq. DOUBLE_NULL) .and. ( ES%active_xpoint .eq. UPPER_XPOINT ) ) then ! Put upper Xpoint first
+if ( (xcase .eq. DOUBLE_NULL) .and. ( ES%active_xpoint .eq. UPPER_XPOINT ) ) then
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     UPPER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
-                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
+                     LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, &
+                     ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
 index = newnode_list%n_nodes
-
-
 
 !----------------------------------------------------------------------------!
 !-------------------------------- The leg -----------------------------------!
 !----------------------------------------------------------------------------!
-
-do i=1,n_surf_tot                 
-  do j=1, n_seg
-
+do i = 1, n_surf_tot
+  do j = 1, n_seg
     index = index + 1
     call create_new_node(node_list, element_list, newnode_list, index, i, j, nwpts)
-
   enddo
 enddo
 newnode_list%n_nodes = index
-
-
-
 
 !------------------------------------------------------------------------------------------------------------------------!
 !************************************************************************************************************************!
@@ -776,14 +858,12 @@ newnode_list%n_nodes = index
 !------------------------------------------------------------------------------------------------------------------------!
 write(*,*) '                 Defining new elements'
 
-
 !-------------------------------- The closed region
 n_tmp = 4 ! because we put the Xpoints first
 if (xcase .eq. DOUBLE_NULL) n_tmp = 8 ! because we put the Xpoints first
 index = 0
-do i=1,n_surf_tot-1
-  do j=1, n_seg-1
-
+do i = 1, n_surf_tot-1
+  do j = 1, n_seg-1
     index = index + 1
     newelement_list%element(index)%size = 1.d0
 
@@ -792,7 +872,6 @@ do i=1,n_surf_tot-1
       newelement_list%element(index)%vertex(2) = n_tmp + (i  )*n_seg + j
       newelement_list%element(index)%vertex(3) = n_tmp + (i  )*n_seg + j + 1
       newelement_list%element(index)%vertex(4) = n_tmp + (i-1)*n_seg + j + 1
-      ! Connect with Xpoint properly
       if ( (i .eq. i_sep-1) .and. (j .eq. 1) ) then
         newelement_list%element(index)%vertex(2) = n_xpoint_1
       endif  
@@ -805,7 +884,6 @@ do i=1,n_surf_tot-1
       newelement_list%element(index)%vertex(2) = n_tmp + (i  )*n_seg + j + 1
       newelement_list%element(index)%vertex(3) = n_tmp + (i  )*n_seg + j
       newelement_list%element(index)%vertex(4) = n_tmp + (i-1)*n_seg + j
-      ! Connect with Xpoint properly
       if ( (i .eq. i_sep-1) .and. (j .eq. 1) ) then
         newelement_list%element(index)%vertex(3) = n_xpoint_1
       endif  
@@ -818,7 +896,6 @@ do i=1,n_surf_tot-1
       newelement_list%element(index)%vertex(2) = n_tmp + (i  )*n_seg + j + 1
       newelement_list%element(index)%vertex(3) = n_tmp + (i  )*n_seg + j
       newelement_list%element(index)%vertex(4) = n_tmp + (i-1)*n_seg + j
-      ! Connect with Xpoint properly
       if ( (i .eq. i_sep-1) .and. (j .eq. 1) ) then
         newelement_list%element(index)%vertex(3) = n_xpoint_1
       endif  
@@ -831,7 +908,6 @@ do i=1,n_surf_tot-1
       newelement_list%element(index)%vertex(2) = n_tmp + (i  )*n_seg + j
       newelement_list%element(index)%vertex(3) = n_tmp + (i  )*n_seg + j + 1
       newelement_list%element(index)%vertex(4) = n_tmp + (i-1)*n_seg + j + 1
-      ! Connect with Xpoint properly
       if ( (i .eq. i_sep-1) .and. (j .eq. 1) ) then
         newelement_list%element(index)%vertex(2) = n_xpoint_1
       endif  
@@ -839,58 +915,58 @@ do i=1,n_surf_tot-1
         newelement_list%element(index)%vertex(1) = n_xpoint_2
       endif  
     endif
-      
   enddo
 enddo
 newelement_list%n_elements = index
 
-
-!----------------------------------- Print a python file that plots a cross with the 4 nodes of each element
+!----------------------------------- Print a python file that plots elements
 if (plot_grid) then
-  write(char_tmp,'(i1)')which_leg
+  write(char_tmp, '(i1)') which_leg
   plot_filename = 'plot_leg_elements'//char_tmp//'.py'
   n_loop = newelement_list%n_elements
-  open(101,file=plot_filename)
-    write(101,'(A)')         '#!/usr/bin/env python'
-    write(101,'(A)')         'import numpy as N'
-    write(101,'(A)')         'import pylab'
-    write(101,'(A)')         'def main():'
-    write(101,'(A,i6,A)')    ' r = N.zeros(',4*n_loop,')'
-    write(101,'(A,i6,A)')    ' z = N.zeros(',4*n_loop,')'
-    do j=1,n_loop
-      do i=1,2
+  open(101, file=plot_filename)
+    write(101, '(A)') '#!/usr/bin/env python'
+    write(101, '(A)') 'import numpy as N'
+    write(101, '(A)') 'import pylab'
+    write(101, '(A)') 'def main():'
+    write(101, '(A,i6,A)') ' r = N.zeros(', 4*n_loop, ')'
+    write(101, '(A,i6,A)') ' z = N.zeros(', 4*n_loop, ')'
+    do j = 1, n_loop
+      do i = 1, 2
         index = newelement_list%element(j)%vertex(i)
-        write(101,'(A,i6,A,f15.4)') ' r[',4*(j-1)+2*i-2,'] = ',newnode_list%node(index)%x(1,1,1)
-        write(101,'(A,i6,A,f15.4)') ' z[',4*(j-1)+2*i-2,'] = ',newnode_list%node(index)%x(1,1,2)
+        write(101, '(A,i6,A,f15.4)') ' r[', 4*(j-1)+2*i-2, '] = ', newnode_list%node(index)%x(1,1,1)
+        write(101, '(A,i6,A,f15.4)') ' z[', 4*(j-1)+2*i-2, '] = ', newnode_list%node(index)%x(1,1,2)
         index = newelement_list%element(j)%vertex(i+2)
-        write(101,'(A,i6,A,f15.4)') ' r[',4*(j-1)+2*i-1,'] = ',newnode_list%node(index)%x(1,1,1)
-        write(101,'(A,i6,A,f15.4)') ' z[',4*(j-1)+2*i-1,'] = ',newnode_list%node(index)%x(1,1,2)
+        write(101, '(A,i6,A,f15.4)') ' r[', 4*(j-1)+2*i-1, '] = ', newnode_list%node(index)%x(1,1,1)
+        write(101, '(A,i6,A,f15.4)') ' z[', 4*(j-1)+2*i-1, '] = ', newnode_list%node(index)%x(1,1,2)
       enddo
     enddo
-    write(101,'(A,i6,A)')    ' for i in range (0,',n_loop*2,'):'
-    write(101,'(A)')         '  pylab.plot(r[2*i:2*i+2],z[2*i:2*i+2], "r")'
-    do j=1,n_loop
-      do i=1,4
+    write(101, '(A,i6,A)') ' for i in range (0,', n_loop*2, '):'
+    write(101, '(A)')      '  pylab.plot(r[2*i:2*i+2], z[2*i:2*i+2], "r")'
+    do j = 1, n_loop
+      do i = 1, 4
         index = newelement_list%element(j)%vertex(i)
-        write(101,'(A,i6,A,f15.4)') ' r[',4*(j-1)+i-1,'] = ',newnode_list%node(index)%x(1,1,1)
-        write(101,'(A,i6,A,f15.4)') ' z[',4*(j-1)+i-1,'] = ',newnode_list%node(index)%x(1,1,2)
+        write(101, '(A,i6,A,f15.4)') ' r[', 4*(j-1)+i-1, '] = ', newnode_list%node(index)%x(1,1,1)
+        write(101, '(A,i6,A,f15.4)') ' z[', 4*(j-1)+i-1, '] = ', newnode_list%node(index)%x(1,1,2)
       enddo
     enddo
-    write(101,'(A,i6,A)')    ' for i in range (0,',n_loop,'):'
-    write(101,'(A)')         '  pylab.plot(r[4*i:4*i+4],z[4*i:4*i+4], "b")'
-    write(101,'(A)')         ' pylab.axis("equal")'
-    write(101,'(A)')         ' pylab.show()'
-    write(101,'(A)')         ' '
-    write(101,'(A)')         'main()'
+    write(101, '(A,i6,A)') ' for i in range (0,', n_loop, '):'
+    write(101, '(A)')      '  pylab.plot(r[4*i:4*i+4], z[4*i:4*i+4], "b")'
+    write(101, '(A)')      ' pylab.axis("equal")'
+    write(101, '(A)')      ' pylab.show()'
+    write(101, '(A)')      ' '
+    write(101, '(A)')      'main()'
   close(101)
 endif
 
-
-
-
+!------------------------------------------------------------------------------------------------------------------------!
+!*********************************************** Deallocate local arrays ************************************************!
+!------------------------------------------------------------------------------------------------------------------------!
 deallocate(seg, R_seg, Z_seg, R_seg_surf, Z_seg_surf, R_seg_smooth, Z_seg_smooth)
-deallocate(R_polar,Z_polar)
+deallocate(R_seg_mid, Z_seg_mid, R_seg_mid2, Z_seg_mid2)
+deallocate(R_polar, Z_polar)
 deallocate(i_flux)
+deallocate(R_polar_smooth, Z_polar_smooth)
 
 return
 end subroutine define_leg_grid
@@ -964,7 +1040,7 @@ subroutine segment_surface_length(node_list,element_list,surface, R_beg, Z_beg, 
   real*8  :: R3,dR3_dr,dR3_ds,dR3_drs,dR3_drr,dR3_dss
   real*8  :: Z3,dZ3_dr,dZ3_ds,dZ3_drs,dZ3_drr,dZ3_dss
   real*8  :: surface_length, length, length_sum, length_seg
-  real*8, parameter :: tol_find = 5.d-4
+  real*8, parameter :: tol_find = 1.d-3
   
   ! --- Find the corresponding end points on each surface
   allocate(surface_list_tmp%psi_values(1))
@@ -1060,6 +1136,7 @@ subroutine segment_surface_length(node_list,element_list,surface, R_beg, Z_beg, 
             call find_R_surface(node_list,element_list,surface_list_tmp,1,R_beg,i_elm_find,s_find,t_find,st_find,i_find)
           endif
         endif
+!        write(*,*) i_find,'i_find'
         do j_find = 1,i_find
           rr    = s_find(j_find)
           ss    = t_find(j_find)
@@ -1073,6 +1150,7 @@ subroutine segment_surface_length(node_list,element_list,surface, R_beg, Z_beg, 
             i_piece_beg = i_piece
             st_beg      = st_find(j_find)
           endif
+!          write(*,*) j_find,diff_beg,i_part
           if ( (xpoint_surface) .and. (diff_beg .le. tol_find) ) then
             if (i_part .eq. i_part_end) then
               diff_pieces = abs(i_piece-i_piece_end)
@@ -1082,6 +1160,7 @@ subroutine segment_surface_length(node_list,element_list,surface, R_beg, Z_beg, 
                 i_part_beg  = i_part
                 i_piece_beg = i_piece
                 st_beg      = st_find(j_find)
+!                write(*,*) 'find begin successfully'
               endif
             endif
           endif
@@ -1096,6 +1175,9 @@ subroutine segment_surface_length(node_list,element_list,surface, R_beg, Z_beg, 
   ! --- both end points should be on the same part
   if (i_part_end .ne. i_part_beg) then
     write(*,*)'Problem segmenting surface: end points on different surface parts!',i_part_end,i_part_beg
+    write(*,*) R_beg,Z_beg,'begin'
+    write(*,*) R_end,Z_end,'end'
+    write(*,*) xpoint_surface
     stop
   endif
   
@@ -1256,4 +1338,3 @@ subroutine curve_length(R1, dR1, R2, dR2, Z1, dZ1, Z2, dZ2, s_beg, s_end, length
   return
 
 end subroutine curve_length
-

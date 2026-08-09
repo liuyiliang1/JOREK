@@ -30,7 +30,7 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
   
   ! --- eqdsk variables
   integer          :: nR_eqdsk, nZ_eqdsk, ier
-  real,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
+  real*8,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
   logical          :: normal_eqdsk, normal_eqdsk_wall
   
   ! --- Grid variables

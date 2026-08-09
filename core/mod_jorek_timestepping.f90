@@ -354,10 +354,10 @@ subroutine do_jorek_timestep(this, sim, ev)
   
   ! --- Prepare minor radius and q-,ft-,B-splines for bootstrap current
   minRad=0.d0
+  ! q-profile is always needed (seed_q, diagnostics, etc.)
+  call bootstrap_get_q_and_ft_splines(sim%my_id, sim%fields%node_list, sim%fields%element_list, this%es%psi_axis, this%es%psi_xpoint, this%es%R_xpoint, this%es%Z_xpoint)
   if (bootstrap) then
     call bootstrap_find_minRad(sim%my_id, sim%fields%node_list, sim%fields%element_list, this%es%R_axis, this%es%Z_axis, this%es%psi_axis, this%es%psi_bnd)
-
-    call bootstrap_get_q_and_ft_splines(sim%my_id, sim%fields%node_list, sim%fields%element_list, this%es%psi_axis, this%es%psi_xpoint, this%es%R_xpoint, this%es%Z_xpoint)
   endif
   
   call clck_time_barrier(t1)
@@ -375,6 +375,16 @@ subroutine do_jorek_timestep(this, sim, ev)
   this%mhd_sim%es => es ! assign pointer to the equilibrium state
     
   call construct_matrix(this%mhd_sim, this%mhd_sim%local_elms, this%mhd_sim%n_local_elms, this%a_mat, this%rhs_vec, harmonic_matrix=.false.)
+
+  ! --- Track seed injection: increment counter after first matrix construction
+  ! Increment seed step counter for smooth temporal envelope.
+! Continuous mode: stops incrementing once ramp-up is complete (t >= 1).
+! One-time pulse: always increments; envelope returns 0 after ramp-up.
+if (seed_continuous) then
+  if (seed_inject_step < seed_ramp_steps) seed_inject_step = seed_inject_step + 1
+else
+  seed_inject_step = seed_inject_step + 1
+end if
 
   call clck_time_barrier(t1)
   if (sim%my_id .eq. 0) then

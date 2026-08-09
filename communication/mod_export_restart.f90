@@ -296,11 +296,12 @@ end subroutine export_binary_restart
  ! 
  ! Export in a HDF5 binary restart file
 subroutine export_hdf5_restart(node_list,element_list,filename,aux_node_list)
- 
+
   use data_structure
   use phys_module
   use pellet_module
   use vacuum, only : export_HDF5_restart_vacuum
+  use mpi_mod
   
 #ifdef USE_HDF5
   use hdf5
@@ -564,7 +565,10 @@ subroutine export_hdf5_restart(node_list,element_list,filename,aux_node_list)
     t_current_prof_initialized = 'F'
   end if
 
-  ! -> Create and open HDF5 file
+  ! -> Create and open HDF5 file (only master process)
+  call MPI_Comm_rank(MPI_COMM_WORLD, ind, ierr)
+  if (ind == 0) then
+
   write (6,*) " HDF5 file ", filename
   call HDF5_create(trim(filename),file_id,ierr)
   if (ierr.ne.0) then
@@ -979,6 +983,8 @@ subroutine export_hdf5_restart(node_list,element_list,filename,aux_node_list)
 
   ! -> close file
   call HDF5_close(file_id)
+
+  end if  ! (ind == 0, master process)
 
   ! -> Deallocate arrays
   call tr_deallocate(t_x,"x",CAT_UNKNOWN)

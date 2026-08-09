@@ -164,6 +164,8 @@ most: jorek2_connection2 \
       jorek_to_helena \
       new_diag_demo \
       jorek2_postproc \
+      jorek_growthrates \
+      jorek_ballooning \
       rst_bin2hdf5 \
       rst_hdf52bin \
       jorek2_main

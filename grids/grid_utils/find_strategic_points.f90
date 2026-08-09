@@ -690,7 +690,7 @@ integer  :: i_part
 real*8   :: R_tmp(4), Z_tmp(4)
 real*8   :: distance, distance_min
 
-logical, parameter :: debug = .false.
+logical, parameter :: debug = .true.
 
 n_flux    = n_grids(1)
 n_open    = n_grids(3); n_outer   = n_grids(4); n_inner = n_grids(5)
@@ -1209,7 +1209,8 @@ endif
 ! ---------------------------------- The last open flux surface (Private boundary) under lower X-point 
 if (xcase .ne. UPPER_XPOINT) then
   if (debug) write(*,*)'looking for lower private limits'
-  i_surf = n_flux+n_open+n_outer+n_inner+n_private  
+  i_surf = n_flux+n_open+n_outer+n_inner+n_private
+  write(*,'(A,i5,A,i5,A,f12.6)') 'DEBUG find_strategic: lower private: i_surf=', i_surf, ' n_parts=', flux_list%flux_surfaces(i_surf)%n_parts, ' Z_axis=', ES%Z_axis
   count = 0
   do i_part=1,flux_list%flux_surfaces(i_surf)%n_parts
     edge_piece(1) = flux_list%flux_surfaces(i_surf)%parts_index(i_part)
@@ -1222,6 +1223,7 @@ if (xcase .ne. UPPER_XPOINT) then
       i_elm = flux_list%flux_surfaces(i_surf)%elm(edge_piece(l))
       call interp_RZ(node_list,element_list,i_elm,rr1,ss1,RRg1,dRRg1_dr,dRRg1_ds,dRRg1_drs,dRRg1_drr,dRRg1_dss, &
                                                           ZZg1,dZZg1_dr,dZZg1_ds,dZZg1_drs,dZZg1_drr,dZZg1_dss)
+      write(*,'(A,i3,A,i3,A,i8,A,2f12.6,A,L2)') 'DEBUG find_strategic:   part=', i_part, ' ep=', l, ' elm=', i_elm, ' (R,Z)=', RRg1, ZZg1, ' Z<Z_axis=', (ZZg1 .lt. ES%Z_axis)
       if (ZZg1 .lt. ES%Z_axis) then
         count = count + 1
         R_tmp(count) = RRg1

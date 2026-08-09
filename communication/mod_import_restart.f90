@@ -194,6 +194,21 @@ subroutine import_binary_restart(node_list, element_list, filename, format_rst, 
 
   call init_node_list(node_list, node_list%n_nodes, node_list%n_dof, n_var)
 
+  ! Expand allocation to n_nodes_max to leave room for grid refinement
+  if (n_nodes_max > node_list%n_nodes) then
+    block
+      type(type_node), allocatable :: temp_node(:)
+      integer :: n_tmp
+      n_tmp = node_list%n_nodes
+      allocate(temp_node(n_tmp))
+      temp_node(1:n_tmp) = node_list%node(1:n_tmp)
+      deallocate(node_list%node)
+      allocate(node_list%node(n_nodes_max))
+      node_list%node(1:n_tmp) = temp_node(1:n_tmp)
+      deallocate(temp_node)
+    end block
+  endif
+
   do i=1,node_list%n_nodes
     read(21) node_list%node(i)%x
     read(21) values_tmp
@@ -1215,6 +1230,18 @@ subroutine import_hdf5_restart(node_list, element_list, filename, format_rst, er
   ! initialise and allocate node_list
   call init_node_list(node_list, n_nodes_tmp, n_dof_tmp, n_var)
 
+  ! Expand allocation to n_nodes_max to leave room for grid refinement
+  if (n_nodes_max > n_nodes_tmp) then
+    block
+      type(type_node), allocatable :: temp_node(:)
+      allocate(temp_node(n_nodes_tmp))
+      temp_node(1:n_nodes_tmp) = node_list%node(1:n_nodes_tmp)
+      deallocate(node_list%node)
+      allocate(node_list%node(n_nodes_max))
+      node_list%node(1:n_nodes_tmp) = temp_node(1:n_nodes_tmp)
+      deallocate(temp_node)
+    end block
+  endif
 
   aux_values_read = .false.
   if(present(aux_node_list)) then

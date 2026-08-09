@@ -315,7 +315,8 @@ do j=1,n_tht
                  .or. ( (RRg1 .lt. ES%R_xpoint(1)) .and. (j.gt.n_tht_mid) ) ) ) &
       .or. (     ( (xcase .eq. DOUBLE_NULL) .and. (ES%active_xpoint .eq. UPPER_XPOINT) ) &
            .and. (    ( (RRg1 .lt. ES%R_xpoint(1)) .and. (j.le.n_tht_mid) ) &
-                 .or. ( (RRg1 .gt. ES%R_xpoint(1)) .and. (j.gt.n_tht_mid) ) ) ) ) then
+                 .or. ( (RRg1 .gt. ES%R_xpoint(1)) .and. (j.gt.n_tht_mid) ) ) ) &
+      .or. (i_find .lt. 2) ) then
 
       nwpts%R_max(j)             = RRg1
       nwpts%Z_max(j)             = ZZg1
@@ -349,7 +350,31 @@ do j=1,n_tht
       nwpts%k_cross(i_max+1,j)   = 3
 
     endif
-    
+
+    ! --- Sanity check: if R_max is on opposite side from R_sep, use find_theta_surface as fallback
+    if ( (nwpts%R_sep(j) - ES%R_xpoint(1)) * (nwpts%R_max(j) - ES%R_xpoint(1)) .lt. 0.d0 ) then
+      call find_theta_surface(node_list,element_list,flux_list,i_max,theta_sep(j), &
+                              ES%R_axis,ES%Z_axis,i_elm_find,s_find,t_find,i_find)
+      if (i_find .ge. 1) then
+        if (s_find(1) .lt. 0.d0) s_find(1) = 0.d0
+        if (s_find(1) .gt. 1.d0) s_find(1) = 1.d0
+        if (t_find(1) .lt. 0.d0) t_find(1) = 0.d0
+        if (t_find(1) .gt. 1.d0) t_find(1) = 1.d0
+        call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),&
+                       RRg1,dRRg1_dr,dRRg1_ds,dRRg1_drs,dRRg1_drr,dRRg1_dss,    &
+                       ZZg1,dZZg1_dr,dZZg1_ds,dZZg1_drs,dZZg1_drr,dZZg1_dss)
+        nwpts%R_max(j)  = RRg1
+        nwpts%Z_max(j)  = ZZg1
+        nwpts%RR_new(i_max+1,j)    = RRg1
+        nwpts%ZZ_new(i_max+1,j)    = ZZg1
+        nwpts%ielm_flux(i_max+1,j) = i_elm_find(1)
+        nwpts%s_flux(i_max+1,j)    = s_find(1)
+        nwpts%t_flux(i_max+1,j)    = t_find(1)
+        nwpts%t_tht(i_max+1,j)     = 1.d0
+        nwpts%k_cross(i_max+1,j)   = 3
+      endif
+    endif
+
     if (     ( (ES%active_xpoint .eq. LOWER_XPOINT) .or. (ES%active_xpoint .eq. SYMMETRIC_XPOINT) ) &
        .and. ((j .eq. 1) .or. (j .eq. n_tht))                                                   ) then
       nwpts%R_max(1)              = stpts%RLimit_LowerOuterLeg ! this one is known - safer...
@@ -410,7 +435,8 @@ do j=1,n_tht
                  .or. ( (RRg1 .lt. ES%R_xpoint(2)) .and. (j .gt. n_tht_mid) ) ) ) &
       .or. (     ( ES%active_xpoint .eq. UPPER_XPOINT                                                                             ) &
            .and. (    ( (RRg1 .ge. ES%R_xpoint(2)) .and. (j .gt. n_tht_mid) ) &
-                 .or. ( (RRg1 .lt. ES%R_xpoint(2)) .and. (j .lt. n_tht_mid) ) ) ) ) then
+                 .or. ( (RRg1 .lt. ES%R_xpoint(2)) .and. (j .lt. n_tht_mid) ) ) ) &
+      .or. (i_find .lt. 2) ) then
 
       nwpts%R_max(j)             = RRg1
       nwpts%Z_max(j)             = ZZg1
@@ -444,8 +470,32 @@ do j=1,n_tht
       nwpts%k_cross(i_max+1,j)   = 3
 
     endif
-    
-    if (     ( ES%active_xpoint .eq. UPPER_XPOINT ) & 
+
+    ! --- Sanity check (upper half): if R_max is on opposite side from R_sep, use find_theta_surface
+    if ( (nwpts%R_sep(j) - ES%R_xpoint(2)) * (nwpts%R_max(j) - ES%R_xpoint(2)) .lt. 0.d0 ) then
+      call find_theta_surface(node_list,element_list,flux_list,i_max,theta_sep(j), &
+                              ES%R_axis,ES%Z_axis,i_elm_find,s_find,t_find,i_find)
+      if (i_find .ge. 1) then
+        if (s_find(1) .lt. 0.d0) s_find(1) = 0.d0
+        if (s_find(1) .gt. 1.d0) s_find(1) = 1.d0
+        if (t_find(1) .lt. 0.d0) t_find(1) = 0.d0
+        if (t_find(1) .gt. 1.d0) t_find(1) = 1.d0
+        call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),&
+                       RRg1,dRRg1_dr,dRRg1_ds,dRRg1_drs,dRRg1_drr,dRRg1_dss,    &
+                       ZZg1,dZZg1_dr,dZZg1_ds,dZZg1_drs,dZZg1_drr,dZZg1_dss)
+        nwpts%R_max(j)  = RRg1
+        nwpts%Z_max(j)  = ZZg1
+        nwpts%RR_new(i_max+1,j)    = RRg1
+        nwpts%ZZ_new(i_max+1,j)    = ZZg1
+        nwpts%ielm_flux(i_max+1,j) = i_elm_find(1)
+        nwpts%s_flux(i_max+1,j)    = s_find(1)
+        nwpts%t_flux(i_max+1,j)    = t_find(1)
+        nwpts%t_tht(i_max+1,j)     = 1.d0
+        nwpts%k_cross(i_max+1,j)   = 3
+      endif
+    endif
+
+    if (     ( ES%active_xpoint .eq. UPPER_XPOINT ) &
        .and. ( (j .eq. 1) .or. (j .eq. n_tht_2) ) ) then
       nwpts%R_max(n_tht)            = stpts%RLimit_UpperOuterLeg ! this one is known - safer...
       nwpts%Z_max(n_tht)            = stpts%ZLimit_UpperOuterLeg ! this one is known - safer...

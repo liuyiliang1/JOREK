@@ -18,7 +18,7 @@ use phys_module, only:     n_flux, n_open, n_tht, n_outer, n_inner, n_private, n
                            SIG_closed, SIG_theta, SIG_open, SIG_outer, SIG_inner, SIG_private, SIG_up_priv,     &
                            SIG_theta_up, SIG_leg_0, SIG_leg_1, SIG_up_leg_0, SIG_up_leg_1,                      &
                            dPSI_open, dPSI_outer, dPSI_inner, dPSI_private, dPSI_up_priv,                       &
-                           xcase, force_horizontal_Xline
+                           xcase, force_horizontal_Xline, pglobal_id
 use equil_info
 
 implicit none
@@ -201,6 +201,11 @@ if (allocated(sep_list%flux_surfaces))     deallocate(sep_list%flux_surfaces)
 !-------------------------------------------------------------------------------------------!
 
 !-------------------------------- Call the routine
+write(*,'(A,i3)') 'DEBUG grid_double_xpoint_inside_wall: xcase=', xcase
+write(*,'(A,i5)') 'DEBUG grid_double_xpoint_inside_wall: ES%active_xpoint=', ES%active_xpoint
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt1 (R,Z)=', ES%R_xpoint(1), ES%Z_xpoint(1)
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt2 (R,Z)=', ES%R_xpoint(2), ES%Z_xpoint(2)
+write(*,'(A,6i5)') 'DEBUG grid_double_xpoint_inside_wall: n_grids(1,3:7)=', n_grids(1), n_grids(3), n_grids(4), n_grids(5), n_grids(6), n_grids(7)
 call reorder_flux_surfaces(node_list, element_list, flux_list, .true., ifail)
 call clean_surfaces(node_list,element_list,flux_list,n_grids)
 call find_strategic_points_advanced(node_list, element_list, flux_list, xcase, force_horizontal_Xline, n_grids, stpts)
@@ -306,7 +311,7 @@ if (xcase .ne. LOWER_XPOINT) then
   call update_boundary_types  (element_list_new,node_list_new, 1)
 endif
 call temporary_element_sizes(node_list_new, element_list_new)
-call export_restart(node_list_new, element_list_new, 'grid_no_patch')
+if (pglobal_id == 0) call export_restart(node_list_new, element_list_new, 'grid_no_patch')
 
 !-------------------------------- Now the wall extension
 do i_ext = 1,n_wall_blocks
@@ -318,7 +323,7 @@ do i_ext = 1,n_wall_blocks
   if (i_ext .ge. 10) write(char_patch,'(i2)') i_ext
   write(filename,'(A10,A)')'grid_patch',trim(char_patch)
   call temporary_element_sizes(node_list_tmp, element_list_tmp)
-  call export_restart(node_list_tmp, element_list_tmp, filename)
+  if (pglobal_id == 0) call export_restart(node_list_tmp, element_list_tmp, filename)
   ! --- create restart file for vtk plots END
   call join_grid_patches(node_list_new,  element_list_new, &
                          node_list_tmp,  element_list_tmp, &
@@ -332,7 +337,7 @@ enddo
 
 !-------------------------------- Finalise grid (element size, nodes index etc.)
 call finish_grid(node_list, element_list, node_list_new, element_list_new, n_grids, .true., .true., .true.)
-call export_restart(node_list, element_list, 'jorek_grid')
+if (pglobal_id == 0) call export_restart(node_list, element_list, 'jorek_grid')
 
 
 

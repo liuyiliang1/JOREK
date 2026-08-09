@@ -418,6 +418,7 @@ mpi_required = 0
 
       ! --- Compute the plasma equilibrium
       if (equil) then
+        call read_eqdsk_equil(my_id,node_list, element_list, bnd_node_list, bnd_elm_list, xpoint, xcase)
         call equilibrium(my_id,node_list,element_list,bnd_node_list,bnd_elm_list,xpoint,xcase, .true.)
         if (export_for_nemec) then
           if(my_id ==0 ) call export_nemec(node_list, element_list, xpoint, xcase)
@@ -425,7 +426,7 @@ mpi_required = 0
         if (my_id == 0) call update_equil_state(my_id,node_list, element_list, bnd_elm_list, xpoint, xcase)
         if (.not. freeboundary) then
           fileout = 'jorek_equil_rz'
-          call export_restart(node_list, element_list, fileout)
+          if (my_id == 0) call export_restart(node_list, element_list, fileout)
         end if
       end if ! if (equil) then
 
@@ -561,7 +562,7 @@ write(*,*) "n elements:", element_list%n_elements
   mhd_sim%bnd_elm_list  => bnd_elm_list
 
   ! --- Load deuterium ADAS data if required
-  if (deuterium_adas) ad_deuterium = read_adf11(my_id,'96_h')  
+  if (deuterium_adas) ad_deuterium = read_adf11(my_id,'96_h',adas_dir)  
   
    ! --- Initialize FFTW
 #ifdef USE_FFTW
@@ -705,9 +706,10 @@ write(*,*) "n elements:", element_list%n_elements
     ! --- Prepare minor radius and q-,ft-,B-splines for bootstrap current
     minRad = 0.0
     
+    ! q-profile is always needed (seed_q auto-location, diagnostics, etc.)
+    call bootstrap_get_q_and_ft_splines(my_id,mhd_sim%node_list, mhd_sim%element_list, ES%psi_axis, ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint)
     if (bootstrap) then
       call bootstrap_find_minRad(my_id,mhd_sim%node_list, mhd_sim%element_list, ES%R_axis, ES%Z_axis, ES%psi_axis, ES%psi_bnd)
-      call bootstrap_get_q_and_ft_splines(my_id,mhd_sim%node_list, mhd_sim%element_list, ES%psi_axis, ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint)
     endif
     
     call tr_debug_write("JMAIN:Find_axis_R",ES%R_axis)
@@ -727,7 +729,15 @@ write(*,*) "n elements:", element_list%n_elements
     !--------- Constructing Global Matrix
     mhd_sim%es => es ! assign pointer to the equilibrium state
     call construct_matrix(mhd_sim, mhd_sim%local_elms, mhd_sim%n_local_elms, a_mat, rhs_vec, harmonic_matrix=.false.)
-  
+
+    ! --- Track seed injection: increment counter after matrix construction
+    !     (mirrors mod_jorek_timestepping.f90:379-383)
+    if (seed_continuous) then
+      if (seed_inject_step < seed_ramp_steps) seed_inject_step = seed_inject_step + 1
+    else
+      seed_inject_step = seed_inject_step + 1
+    end if
+
     call clck_time_barrier(t1); call clck_ldiff(t0,t1,tsecond)
     if (my_id.eq.0) write(*,FMT_TIMING) my_id, '# Elapsed time construct global matrix: ',tsecond
       
