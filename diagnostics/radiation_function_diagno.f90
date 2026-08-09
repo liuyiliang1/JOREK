@@ -125,7 +125,7 @@ close(5)
 open(2, file = 'dZ_imp_dT.dat', status = 'replace')
 do i_t=1,n_t
   temp = T_min * (T_max/T_min)**(real(i_t - 1)/real(n_t - 1))
-  call cor%interp_linear(density=20.,temperature=log10(temp*EL_CHG/K_BOLTZ),&
+  call cor%interp_linear(density=20.d0,temperature=log10(temp*EL_CHG/K_BOLTZ),&
                          p_out=P_imp,p_Te_out=dP_imp_dT,z_avg=Z_imp,z_avg_Te=dZ_imp_dT,&
                          z_avg_TeTe=d2Z_imp_dT2)     !ad%PLT%GRCFspline
   write(2,*) temp, dZ_imp_dT
@@ -135,7 +135,7 @@ close(2)
 open(2, file = 'Z_imp.dat', status = 'replace')
 do i_t=1,n_t
   temp = T_min * (T_max/T_min)**(real(i_t - 1)/real(n_t - 1))
-  call cor%interp_linear(density=20.,temperature=log10(temp*EL_CHG/K_BOLTZ),&
+  call cor%interp_linear(density=20.d0,temperature=log10(temp*EL_CHG/K_BOLTZ),&
                          p_out=P_imp,p_Te_out=dP_imp_dT,z_avg=Z_imp,z_avg_Te=dZ_imp_dT,&
                          z_avg_TeTe=d2Z_imp_dT2)     !ad%PLT%GRCFspline
   write(2,*) temp, Z_imp
