@@ -20,9 +20,7 @@
 # ...but keep PNGs that are part of the documentation site (docs/ is the Jekyll root)
 !docs/**/*.png
 *.csv
-Makefile.inc
 *.optrpt
-Makefile.inc
 j302_1
 j302_3
 .fuse_hidden*
@@ -110,3 +108,11 @@ vendor/
 # macOS
 .DS_Store
 Gemfile.lock
+build_all
+build_all.sh
+build/
+kineticwork/
+particles/examples/
+.vscode/settings.json
+jorek2_target2vtkn
+Makefile.inc

@@ -43,7 +43,9 @@ integer             :: n_private,   n_up_priv,   n_leg,   n_up_leg
 integer             :: index
 integer             :: n_start_open, n_start_outer, n_start_inner
 integer             :: n_start_private, n_start_up_priv
-integer             :: n_xpoint_1, n_xpoint_2, n_xpoint_3, n_jump
+integer             :: n_xpoint_1, n_xpoint_2, n_xpoint_3
+  real*8              :: R_xp4(4), Z_xp4(4), s_xp4(4), t_xp4(4)
+  integer             :: i_elm_xp4(4), n_jump
 integer             :: iv, ivp, node_iv, node_ivp, ielm_out
 real*8, allocatable :: xp(:),yp(:)
 real*8              :: RRg1,dRRg1_dr,dRRg1_ds,dRRg1_drs,dRRg1_drr,dRRg1_dss
@@ -124,6 +126,7 @@ if ( (xcase .eq. DOUBLE_NULL) .and. ( ES%active_xpoint .eq. UPPER_XPOINT )      
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
                      LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
+
 index = newnode_list%n_nodes
 
 
@@ -1195,10 +1198,10 @@ if (n_order .ge. 5) then
   enddo
   ! --- For some reason, Poisson needs to be called with -1 first (don't understand why, but gives NaN otherwise)
   call poisson(0,-1,newnode_list,newelement_list,bnd_node_list,bnd_elm_list, 3,1,1, &
-               0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+               0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
   ! --- Project variable
   call Poisson(0,0,newnode_list,newelement_list,bnd_node_list,bnd_elm_list, var_psi,var_psi,1, &
-               0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+               0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
 endif
 
 !-------------------------------- Empty Xpoints

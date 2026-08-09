@@ -39,7 +39,7 @@ subroutine flux_grid(node_list, element_list, bnd_node_list, bnd_elm_list, my_id
 
     if (xpoint)  then
 
-      if ( (xcase .ge. UPPER_XPOINT) .or. (grid_to_wall .and. (n_wall_blocks .gt. 0)) .or. RZ_grid_inside_wall ) then
+      if ( (xcase .ge. UPPER_XPOINT) .or. (grid_to_wall .and. (n_wall_blocks .gt. 0)) .or. RZ_grid_inside_wall ) then ! includes DOUBLE_NULL=3 and QUAD_XPOINT=4
         if (grid_to_wall) then
           if ( (xcase .eq. UPPER_XPOINT) .and. (n_wall_blocks .eq. 0) ) then
             if(my_id == 0 ) call grid_upper_xpoint_wall(node_list,element_list,n_flux,n_open,n_up_priv,n_up_leg,n_up_leg_out,  &

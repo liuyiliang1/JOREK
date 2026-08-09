@@ -76,10 +76,12 @@ do i = 1,node_list1%n_nodes
   if (node_list1%node(i)%boundary .eq. 0) cycle
   if ( (xcase .gt. 0          ) .and. (i .le. 4) ) cycle ! xpoint is patched automatically
   if ( (xcase .eq. DOUBLE_NULL) .and. (i .le. 8) ) cycle
+  if ( (xcase .eq. QUAD_XPOINT ) .and. (i .le. 16) ) cycle
   do j=1,node_list2%n_nodes
     if (node_list2%node(j)%boundary .eq. 0) cycle
     if ( (xcase .gt. 0          ) .and. (j .le. 4) ) cycle ! xpoint is patched automatically
     if ( (xcase .eq. DOUBLE_NULL) .and. (j .le. 8) ) cycle
+    if ( (xcase .eq. QUAD_XPOINT ) .and. (j .le. 16) ) cycle
     R1 = node_list1%node(i)%x(1,1,1); R2 = node_list2%node(j)%x(1,1,1)
     Z1 = node_list1%node(i)%x(1,1,2); Z2 = node_list2%node(j)%x(1,1,2)
     distance = sqrt( (R2-R1)**2 + (Z2-Z1)**2 )
@@ -121,6 +123,7 @@ newelement_list%n_elements = element_list1%n_elements
 if (xcase .gt. 0) then
   n_start = 5 ! avoid the xpoints at the beginning
   if (xcase .eq. DOUBLE_NULL) n_start = 9
+  if (xcase .eq. QUAD_XPOINT)  n_start = 17 ! 4 X-points x 4 nodes + 1
 else
   n_start = 1
 endif

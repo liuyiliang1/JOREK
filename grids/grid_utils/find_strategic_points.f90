@@ -79,9 +79,9 @@ else
   stpts%RStrike_UpperOuterLeg    = 999.d0;  stpts%ZStrike_UpperOuterLeg    = -1.d10
 endif
 
-if(xcase .ne. DOUBLE_NULL) then
-  stpts%RSecondStrike_InnerLeg   = 0.d0;    stpts%ZSecondStrike_InnerLeg   = 0.d0       
-  stpts%RSecondStrike_OuterLeg   = 0.d0;    stpts%ZSecondStrike_OuterLeg   = 0.d0       
+if((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) then
+  stpts%RSecondStrike_InnerLeg   = 0.d0;    stpts%ZSecondStrike_InnerLeg   = 0.d0
+  stpts%RSecondStrike_OuterLeg   = 0.d0;    stpts%ZSecondStrike_OuterLeg   = 0.d0
 else
   if ( ES%active_xpoint .eq. LOWER_XPOINT ) then
     stpts%RSecondStrike_InnerLeg = 999.d0;  stpts%ZSecondStrike_InnerLeg   = 1.d10   
@@ -103,7 +103,7 @@ stpts%RMiddle_UpperPrivate       = 999.d0;  stpts%ZMiddle_UpperPrivate     = -1.
 !------------------- Now find all the points for standard equilibria ------------------------
 !--------------------------------------------------------------------------------------------
 
-if (xcase .ne. DOUBLE_NULL) then
+if ((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) then
   ! ---------------------------------- The last open flux surface (SOL boundary)
   i_surf = n_flux+n_open 
   do k=1,flux_list%flux_surfaces(i_surf)%n_pieces    
@@ -345,7 +345,7 @@ if (xcase .ne. LOWER_XPOINT) then
 endif
 
 ! ---------------------------------- Find strike points of second separatrix
-if (xcase .eq. DOUBLE_NULL) then
+if ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) then
   i_surf = n_flux+n_open
   do k=1,flux_list%flux_surfaces(i_surf)%n_pieces
     do l=1,3,2
@@ -384,7 +384,7 @@ endif
 !----------------------------------- Define the lines separating the central and upper/lower parts of the grid
 if (xcase .ne. UPPER_XPOINT) tht_x1 = atan2(ES%Z_xpoint(1)-ES%Z_axis,ES%R_xpoint(1)-ES%R_axis)
 if (xcase .eq. UPPER_XPOINT) tht_x1 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
-if (xcase .eq. DOUBLE_NULL ) tht_x2 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
+if ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) tht_x2 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
 if (tht_x1 .lt. 0.d0) tht_x1 = tht_x1 + 2.d0*PI
 if (tht_x2 .lt. 0.d0) tht_x2 = tht_x2 + 2.d0*PI
 
@@ -690,7 +690,7 @@ integer  :: i_part
 real*8   :: R_tmp(4), Z_tmp(4)
 real*8   :: distance, distance_min
 
-logical, parameter :: debug = .false.
+logical, parameter :: debug = .true.
 
 n_flux    = n_grids(1)
 n_open    = n_grids(3); n_outer   = n_grids(4); n_inner = n_grids(5)
@@ -740,10 +740,10 @@ else
   stpts%RStrike_UpperOuterLeg    = 999.d0;  stpts%ZStrike_UpperOuterLeg    = -1.d10
 endif
 
-if(xcase .ne. DOUBLE_NULL) then
+if((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) then
   stpts%RSecondStrike_InnerLeg   = 0.d0;    stpts%ZSecondStrike_InnerLeg   = 0.d0
   stpts%RSecondStrike_OuterLeg   = 0.d0;    stpts%ZSecondStrike_OuterLeg   = 0.d0
-else ! xcase == DOUBLE_NULL
+else ! xcase == DOUBLE_NULL or QUAD_XPOINT
   if ( ES%active_xpoint .eq. LOWER_XPOINT ) then
     stpts%RSecondStrike_InnerLeg = 999.d0;  stpts%ZSecondStrike_InnerLeg   = 1.d10
     stpts%RSecondStrike_OuterLeg = 999.d0;  stpts%ZSecondStrike_OuterLeg   = 1.d10
@@ -1045,9 +1045,9 @@ endif
 
 
 ! ---------------------------------- The last open flux surface (outer SOL boundary)
-if (xcase .eq. DOUBLE_NULL) then
+if ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) then
   if (debug) write(*,*)'looking for outer SOL limits'
-  i_surf = n_flux+n_open+n_outer  
+  i_surf = n_flux+n_open+n_outer
   do i=1,flux_list%flux_surfaces(i_surf)%n_parts
     distance_min = 1.d10
     do k=flux_list%flux_surfaces(i_surf)%parts_index(i),flux_list%flux_surfaces(i_surf)%parts_index(i+1)-1
@@ -1086,7 +1086,7 @@ if (xcase .eq. DOUBLE_NULL) then
 endif
 
 ! ---------------------------------- The last open flux surface (inner SOL boundary)
-if (xcase .eq. DOUBLE_NULL) then
+if ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) then
   if (debug) write(*,*)'looking for inner SOL limits'
   i_surf = n_flux+n_open+n_outer+n_inner
   do i=1,flux_list%flux_surfaces(i_surf)%n_parts
@@ -1128,7 +1128,7 @@ endif
 
 
 ! ---------------------------------- The last open flux surface (SOL boundary single null)
-if (xcase .ne. DOUBLE_NULL) then
+if ((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) then
   if (debug) write(*,*)'looking for SOL limits'
   i_surf = n_flux + n_open
   count = 0
@@ -1209,7 +1209,8 @@ endif
 ! ---------------------------------- The last open flux surface (Private boundary) under lower X-point 
 if (xcase .ne. UPPER_XPOINT) then
   if (debug) write(*,*)'looking for lower private limits'
-  i_surf = n_flux+n_open+n_outer+n_inner+n_private  
+  i_surf = n_flux+n_open+n_outer+n_inner+n_private
+  write(*,'(A,i5,A,i5,A,f12.6)') 'DEBUG find_strategic: lower private: i_surf=', i_surf, ' n_parts=', flux_list%flux_surfaces(i_surf)%n_parts, ' Z_axis=', ES%Z_axis
   count = 0
   do i_part=1,flux_list%flux_surfaces(i_surf)%n_parts
     edge_piece(1) = flux_list%flux_surfaces(i_surf)%parts_index(i_part)
@@ -1222,6 +1223,7 @@ if (xcase .ne. UPPER_XPOINT) then
       i_elm = flux_list%flux_surfaces(i_surf)%elm(edge_piece(l))
       call interp_RZ(node_list,element_list,i_elm,rr1,ss1,RRg1,dRRg1_dr,dRRg1_ds,dRRg1_drs,dRRg1_drr,dRRg1_dss, &
                                                           ZZg1,dZZg1_dr,dZZg1_ds,dZZg1_drs,dZZg1_drr,dZZg1_dss)
+      write(*,'(A,i3,A,i3,A,i8,A,2f12.6,A,L2)') 'DEBUG find_strategic:   part=', i_part, ' ep=', l, ' elm=', i_elm, ' (R,Z)=', RRg1, ZZg1, ' Z<Z_axis=', (ZZg1 .lt. ES%Z_axis)
       if (ZZg1 .lt. ES%Z_axis) then
         count = count + 1
         R_tmp(count) = RRg1
@@ -1357,7 +1359,7 @@ endif
 !----------------------------------- Define the lines separating the central and upper/lower parts of the grid
 if (xcase .ne. UPPER_XPOINT) tht_x1 = atan2(ES%Z_xpoint(1)-ES%Z_axis,ES%R_xpoint(1)-ES%R_axis)
 if (xcase .eq. UPPER_XPOINT) tht_x1 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
-if (xcase .eq. DOUBLE_NULL ) tht_x2 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
+if ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) tht_x2 = atan2(ES%Z_xpoint(2)-ES%Z_axis,ES%R_xpoint(2)-ES%R_axis)
 if (tht_x1 .lt. 0.d0) tht_x1 = tht_x1 + 2.d0*PI
 if (tht_x2 .lt. 0.d0) tht_x2 = tht_x2 + 2.d0*PI
 

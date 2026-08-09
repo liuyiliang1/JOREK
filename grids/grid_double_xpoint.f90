@@ -71,8 +71,8 @@ if (xcase .eq. UPPER_XPOINT) then
   n_private = 0
   n_leg     = 0
 endif
-if ( (xcase .eq. DOUBLE_NULL) .and. (mod(n_tht,2) .ne. 0) )  n_tht = n_tht + 1
-if ( (xcase .ne. DOUBLE_NULL) .and. (mod(n_tht,2) .eq. 0) )  n_tht = n_tht + 1
+if ( ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) .and. (mod(n_tht,2) .ne. 0) )  n_tht = n_tht + 1
+if ( ((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) .and. (mod(n_tht,2) .eq. 0) )  n_tht = n_tht + 1
 
 !-------------------------------- Build up some arrays to send as routine parameters (avoid long lists...)
 sigmas(1)  = SIG_closed(1); sigmas(2)  = SIG_theta
@@ -107,6 +107,10 @@ psi_bnd  = 0.d0
 psi_bnd2 = 0.d0
 if(xcase .eq. LOWER_XPOINT) psi_bnd = psi_xpoint(1)
 if(xcase .eq. UPPER_XPOINT) psi_bnd = psi_xpoint(2)
+if(xcase .eq. QUAD_XPOINT) then
+  psi_bnd  = psi_xpoint(1)
+  psi_bnd2 = psi_xpoint(2)
+endif
 if(xcase .eq. DOUBLE_NULL ) then
   if(ES%active_xpoint .eq. UPPER_XPOINT) then
     psi_bnd  = psi_xpoint(2)

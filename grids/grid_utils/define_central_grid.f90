@@ -38,6 +38,8 @@ integer             :: n_flux, n_tht,  n_open,   n_outer,   n_inner
 integer             :: n_private,   n_up_priv,   n_leg,   n_up_leg
 integer             :: ifail
 integer             :: n_xpoint_1, n_xpoint_2, n_xpoint_3
+  real*8              :: R_xp4(4), Z_xp4(4), s_xp4(4), t_xp4(4)
+  integer             :: i_elm_xp4(4)
 integer             :: n_loop, n_loop2, n_tmp
 integer             :: n_start_open, n_start_outer, n_start_inner
 integer             :: n_start_private, n_start_up_priv
@@ -65,6 +67,7 @@ write(*,*) '                 Define central part of grid'
 
 if(xcase .eq. LOWER_XPOINT) psi_bnd = ES%psi_xpoint(1)
 if(xcase .eq. UPPER_XPOINT) psi_bnd = ES%psi_xpoint(2)
+if(xcase .eq. QUAD_XPOINT) psi_bnd = ES%psi_xpoint(1)
 if(xcase .eq. DOUBLE_NULL ) then
   if (ES%active_xpoint .eq. UPPER_XPOINT) then
     psi_bnd  = ES%psi_xpoint(2)
@@ -710,6 +713,7 @@ if ( (xcase .eq. DOUBLE_NULL) .and. ( ES%active_xpoint .eq. UPPER_XPOINT ) ) the
   call create_x_node(node_list, element_list, newnode_list, nwpts, stpts, &
                      LOWER_XPOINT, ES%R_axis, ES%Z_axis, ES%R_xpoint, ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint)
 endif 
+
 index = newnode_list%n_nodes
 
 

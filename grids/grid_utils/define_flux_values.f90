@@ -69,6 +69,10 @@ subroutine define_flux_values(node_list, element_list, flux_list, sep_list, xcas
   xpoint        = .true.
   if(xcase .eq. LOWER_XPOINT) psi_bnd = psi_xpoint(1)
   if(xcase .eq. UPPER_XPOINT) psi_bnd = psi_xpoint(2)
+  if(xcase .eq. QUAD_XPOINT) then
+    psi_bnd  = psi_xpoint(1)
+    psi_bnd2 = psi_xpoint(2)
+  endif
   if(xcase .eq. DOUBLE_NULL ) then
     if ( ES%active_xpoint .eq. UPPER_XPOINT ) then
       psi_bnd  = psi_xpoint(2)

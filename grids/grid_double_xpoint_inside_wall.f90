@@ -100,8 +100,8 @@ if (xcase .eq. UPPER_XPOINT) then
   n_private = 0
   n_leg     = 0
 endif
-if ( (xcase .eq. DOUBLE_NULL) .and. (mod(n_tht,2) .ne. 0) )  n_tht = n_tht + 1
-if ( (xcase .ne. DOUBLE_NULL) .and. (mod(n_tht,2) .eq. 0) )  n_tht = n_tht + 1
+if ( ((xcase .eq. DOUBLE_NULL) .or. (xcase .eq. QUAD_XPOINT)) .and. (mod(n_tht,2) .ne. 0) )  n_tht = n_tht + 1
+if ( ((xcase .ne. DOUBLE_NULL) .and. (xcase .ne. QUAD_XPOINT)) .and. (mod(n_tht,2) .eq. 0) )  n_tht = n_tht + 1
 
 !-------------------------------- Check consistency of grid inputs
 if (xcase .eq. DOUBLE_NULL) then
@@ -151,20 +151,24 @@ psi_bnd  = 0.d0
 psi_bnd2 = 0.d0
 if(xcase .eq. LOWER_XPOINT) psi_bnd = psi_xpoint(1)
 if(xcase .eq. UPPER_XPOINT) psi_bnd = psi_xpoint(2)
+if(xcase .eq. QUAD_XPOINT) then
+  psi_bnd  = psi_xpoint(1)
+  psi_bnd2 = psi_xpoint(2)
+endif
 if(xcase .eq. DOUBLE_NULL ) then
   if(ES%active_xpoint .eq. UPPER_XPOINT) then
     psi_bnd  = psi_xpoint(2)
     psi_bnd2 = psi_xpoint(1)
   else
     psi_bnd  = psi_xpoint(1)
-    psi_bnd2 = psi_xpoint(2)  
+    psi_bnd2 = psi_xpoint(2)
   endif
   ! If we have a symmetric double-null, force the single separatrix
   if (ES%active_xpoint .eq. SYMMETRIC_XPOINT) then
     psi_xpoint(1)  = (psi_xpoint(1)+psi_xpoint(2))/2.d0
     psi_xpoint(2)  = psi_xpoint(1)
     psi_bnd  = psi_xpoint(1)
-    psi_bnd2 = psi_bnd  
+    psi_bnd2 = psi_bnd
     n_grids(3) = 0
   endif
 endif
@@ -201,6 +205,11 @@ if (allocated(sep_list%flux_surfaces))     deallocate(sep_list%flux_surfaces)
 !-------------------------------------------------------------------------------------------!
 
 !-------------------------------- Call the routine
+write(*,'(A,i3)') 'DEBUG grid_double_xpoint_inside_wall: xcase=', xcase
+write(*,'(A,i5)') 'DEBUG grid_double_xpoint_inside_wall: ES%active_xpoint=', ES%active_xpoint
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt1 (R,Z)=', ES%R_xpoint(1), ES%Z_xpoint(1)
+write(*,'(A,2f12.6)') 'DEBUG grid_double_xpoint_inside_wall: Xpt2 (R,Z)=', ES%R_xpoint(2), ES%Z_xpoint(2)
+write(*,'(A,6i5)') 'DEBUG grid_double_xpoint_inside_wall: n_grids(1,3:7)=', n_grids(1), n_grids(3), n_grids(4), n_grids(5), n_grids(6), n_grids(7)
 call reorder_flux_surfaces(node_list, element_list, flux_list, .true., ifail)
 call clean_surfaces(node_list,element_list,flux_list,n_grids)
 call find_strategic_points_advanced(node_list, element_list, flux_list, xcase, force_horizontal_Xline, n_grids, stpts)

@@ -98,6 +98,9 @@ write(*,*) '                 Define extension patch',i_ext
 n_start = 0
 if ((xcase .gt. 0) .and. (n_flux > 0)) n_start = 4
 if ((xcase .eq. DOUBLE_NULL) .and. (n_flux>0)) n_start = 8
+n_start = 4
+if (xcase .eq. DOUBLE_NULL) n_start = 8
+if (xcase .eq. QUAD_XPOINT)  n_start = 16 ! 4 X-points x 4 nodes
 
 !-------------------------------- Allocate data structures for new nodes and initialize them
 newnode_list%n_nodes = 0
