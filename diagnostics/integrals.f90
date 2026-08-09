@@ -206,7 +206,9 @@ do ife =1, element_list%n_elements
         case('Ar')
           m_i_over_m_imp = central_mass/40. ! Argon mass = 40 u
         case('Ne')
-          m_i_over_m_imp = central_mass/20. ! Neon mass = 20 u
+          m_i_over_m_imp = central_mass/20.d0 ! Neon mass = 20 u
+        case('B')
+          m_i_over_m_imp = central_mass/11.d0 ! Boron mass = 11 u
         case default
           write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown (in mod_injection_source.f90) !!'
           write(*,*) '=> We assume the gas is D2.'
@@ -223,7 +225,7 @@ do ife =1, element_list%n_elements
  
         allocate(P_imp(0:imp_adas(index_main_imp)%n_Z))
    
-        call imp_cor(index_main_imp)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ),&
+        call imp_cor(index_main_imp)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ),&
                                       p_out=P_imp,z_avg=Z_imp)
    
         ! Calculate the ionization potential energy and its derivative wrt. temperature
@@ -238,7 +240,7 @@ do ife =1, element_list%n_elements
         E_ion     = E_ion * EL_CHG
         E_ion_bg  = E_ion_bg * EL_CHG
       else
-        call imp_cor(index_main_imp)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ),z_avg=Z_imp)
+        call imp_cor(index_main_imp)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ),z_avg=Z_imp)
         E_ion     = 0.
         E_ion_bg  = 0.
       end if

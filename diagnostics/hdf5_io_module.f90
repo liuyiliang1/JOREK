@@ -74,6 +74,12 @@ module hdf5_io_module
       H5F_ACC_TRUNC_F,file_id,ierr_HDF5,access_prp=plist)
     if(plist.ne.H5P_DEFAULT_F) call H5Pclose_f(plist,ierr_HDF5)
     if (present(ierr)) ierr = ierr_HDF5
+    if (ierr_HDF5 /= 0) then
+      write(*,'(A,A,A,I0)') "FATAL ERROR: HDF5_create failed to create file '", &
+        trim(filename), "', ierr = ", ierr_HDF5
+      write(*,*) "Check filesystem permissions, disk space, and whether the file is locked."
+      stop
+    end if
   end subroutine HDF5_create
 
   !---------------------------------------- 
@@ -302,6 +308,12 @@ module hdf5_io_module
         call H5Fopen_f(trim(filename)//char(0), &
           H5F_ACC_RDWR_F,file_id,ierr_HDF5, access_prp=plist)
         if (present(ierr)) ierr = ierr_HDF5
+        if (ierr_HDF5 /= 0) then
+          write(*,'(A,A,A,I0)') "FATAL ERROR: HDF5_open_or_create failed to open file '", &
+            trim(filename), "', ierr = ", ierr_HDF5
+          write(*,*) "Check filesystem permissions and whether the file is locked."
+          stop
+        end if
       else
         !*** Present an error ***!
         write(*,*) "ERROR: Invalid HDF5 file, exiting"
@@ -313,6 +325,12 @@ module hdf5_io_module
       call H5Fcreate_f(trim(filename)//char(0), &
         access_f, file_id, ierr_HDF5, access_prp=plist)
       if (present(ierr)) ierr = ierr_HDF5
+      if (ierr_HDF5 /= 0) then
+        write(*,'(A,A,A,I0)') "FATAL ERROR: HDF5_open_or_create failed to create file '", &
+          trim(filename), "', ierr = ", ierr_HDF5
+        write(*,*) "Check filesystem permissions, disk space, and whether the file is locked."
+        stop
+      end if
     end if
     if(plist.ne.H5P_DEFAULT_F) call H5Pclose_f(plist,ierr_HDF5)
   end subroutine HDF5_open_or_create

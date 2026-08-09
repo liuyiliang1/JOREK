@@ -49,6 +49,8 @@ module out_save_module
     else
        basics_file = "basics_init.h5"
     end if
+    if (pglobal_id == 0) then
+
     call HDF5_create(trim(basics_file),file_id,ierr)
     if (ierr.ne.0) then
        print*,'pglobal_id = ',pglobal_id, &
@@ -96,6 +98,8 @@ module out_save_module
     call HDF5_real_saving(file_id,gamma_sheath,'BASIC_gamma_sheath'//char(0))
 
     call HDF5_close(file_id)
+
+    end if  ! (pglobal_id == 0)
 #else
     print*,' ==> no savings of the equilibrium HDF5 files, check the USE_HDF5 option'
 #endif
@@ -129,6 +133,8 @@ module out_save_module
     else
        ntor_profiles_file = "ntor_profiles_init.h5"
     end if
+    if (pglobal_id == 0) then
+
     call HDF5_create(trim(ntor_profiles_file),file_id,ierr)
     if (ierr.ne.0) then
        print*,'pglobal_id = ',pglobal_id, &
@@ -165,6 +171,8 @@ module out_save_module
          'Growthrate_mag_ntor_glob'//char(0))
     call HDF5_array1D_saving(file_id,Growthrate_kin_ntor_glob(1:),Nbc, &
          'Growthrate_kin_ntor_glob'//char(0))
+
+    end if  ! (pglobal_id == 0)
 #else
     print*,' ==> no savings of the ntor profiles HDF5 files, check the USE_HDF5 option'
 #endif
@@ -196,6 +204,8 @@ module out_save_module
     else
        radial_profiles_file = "radial_profiles_init.h5"
     end if
+    if (pglobal_id == 0) then
+
     call HDF5_create(trim(radial_profiles_file),file_id,ierr)
     if (ierr.ne.0) then
        print*,'pglobal_id = ',pglobal_id, &
@@ -203,6 +213,7 @@ module out_save_module
     end if
 
     !*** geometry ***
+    end if  ! (pglobal_id == 0)
 #else
     print*,' ==> no savings of the radial profiles HDF5 files, check the USE_HDF5 option'
 #endif
