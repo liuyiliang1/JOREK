@@ -1027,6 +1027,9 @@ aux_q0    = 0.d0; aux_jx0   = 0.d0; aux_jy0   = 0.d0; aux_jz0   = 0.d0; aux_jz0_
           case('Ne')
             m_i_over_m_imp = central_mass/20. ! Neon mass = 20 u
             m_imp          = 20.
+          case('B')
+            m_i_over_m_imp = central_mass/11. ! Boron mass = 11 u
+            m_imp          = 11.
           case default
             write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown (in mod_injection_source.f90) !!'
             write(*,*) '=> We assume the gas is D2.'
@@ -1980,6 +1983,8 @@ do m_bndelem = 1, bnd_elm_list%n_bnd_elements
           m_i_over_m_imp = central_mass/40. ! Argon mass = 40 u
         case('Ne')
           m_i_over_m_imp = central_mass/20. ! Neon mass = 20 u
+        case('B')
+          m_i_over_m_imp = central_mass/11. ! Boron mass = 11 u
         case default
           write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown (in mod_injection_source.f90) !!'
           write(*,*) '=> We assume the gas is D2.'

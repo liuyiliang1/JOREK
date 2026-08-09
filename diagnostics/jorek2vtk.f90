@@ -17,6 +17,7 @@ use mod_boundary
 use mod_plasma_functions
 use mod_vtk
 use mod_interp
+use mod_seed_theta_lookup, only: seed_init_theta_lookup, seed_lookup_theta_star
 use mod_poloidal_currents
 use mod_impurity, only: init_imp_adas, radiation_function, radiation_function_linear
 use mod_atomic_coeff_deuterium, only : atomic_coeff_deuterium
@@ -92,6 +93,13 @@ real*8                :: psi_axis,      R_axis,      Z_axis,      s_axis,      t
 real*8                :: psi_xpoint(2), R_xpoint(2), Z_xpoint(2), s_xpoint(2), t_xpoint(2)
 real*8                :: psi_norm, psi_bnd, grad_psi
 real*8                :: J_phi, J_R, J_Z, eta_T
+real*8                :: theta_seed, shape_seed, psi0_seed, width_seed
+real*8                :: psi_tilde_vtk, j_tilde_vtk
+real*8                :: theta_star_seed, source_geom, source_star
+real*8                :: radial_gauss_diag, cos_geom, cos_star, t_env_diag
+integer, parameter    :: iseed_scan = 88  ! unit for seed theta scan output
+integer               :: i_seed
+real*8                :: psi_n_tmp_vtk
 real*8                :: E_phi, E_R, E_Z, dU_x, dU_y, Jpol_R, Jpol_Z, FFp
 real*8                :: xjac, xjac_x, xjac_y, v_perp, Psi_J, R_p, error, Btot, BigR, BB2_zero, Bv2, grad_chi(3)
 real*8                :: particle_source, D_prof, ZK_prof, source_pellet, ZKpar_T
@@ -100,7 +108,7 @@ integer               :: i_elm_axis, i_elm_xpoint(2), k_tor, ifail, ierr
 logical               :: without_n0_mode, SI_units
 logical               :: include_fluxes, include_neo, include_gvec_field, include_magnetic_field, include_vacuum_field
 logical               :: include_velocity_field, include_bootstrap, include_psi_norm, include_electric_field, include_Jpol, RphiZ_coords
-logical               :: include_projections, include_saw_ene
+logical               :: include_projections, include_saw_ene, include_seed_diag
 character*80          :: proj_basename, filename_proj
 real*8                :: toroidal_angle
 
@@ -120,7 +128,7 @@ real*8                :: r0_real8, rn0_real8, lnA
 real*8                :: T0_corr, r0_corr, rn0_corr, ne_JOREK, T_or_Te, T_or_Te_corr, T_or_Te_0 
 integer               :: i_imp, offset_bgimp, i_bg     ! Loop for more than one background impurity
 integer               :: i_proj
-integer               :: i_psin, i_test, iimp(6), i_ne, ineu(7), ibg_tot, i_pellet(2), i_flux(8), i_neo(10), i_boot(2), i_gvec(3), i_vac(3), i_saw
+integer               :: i_psin, i_test, iimp(6), i_ne, ineu(7), ibg_tot, i_pellet(2), i_flux(8), i_neo(10), i_boot(2), i_gvec(3), i_vac(3), i_saw, i_psiseed_vtk, i_jseed_vtk
 integer               :: i_full(11), i_vec_B, i_vec_V, i_vec_E, i_vec_Jpol, i_vec_gvec(3), i_vec_vac(2)
 integer, allocatable  :: iibg(:), iproj(:)
 character*36          :: imp_label, proj_label
@@ -168,7 +176,7 @@ real*8  :: Rp, Zp, Rmin, Rmax, Zmin, Zmax, s_out, t_out, R_out, Z_out
 namelist /vtk_params/ nsub, i_tor, i_plane, without_n0_mode, SI_units, &
                       include_fluxes, include_neo, include_gvec_field, include_magnetic_field, include_vacuum_field,&
                       include_velocity_field, include_bootstrap, include_psi_norm, include_electric_field, include_Jpol, RphiZ_coords,&
-                      include_projections, proj_basename
+                      include_projections, proj_basename, include_seed_diag
 
 
 write(*,*) '***************************************'
@@ -224,7 +232,8 @@ RphiZ_coords           = .false. ! use xyz transformation (R,0,Z) instead of (R,
 
 include_radiation    = .false. 
 include_neutral_dens = .false.
-include_saw_ene      = .false. 
+include_saw_ene      = .false.
+include_seed_diag     = .false. ! include seed perturbation diagnostics (psi_seed, j_seed)
 #if (defined WITH_Neutrals) || (defined WITH_Impurities)
 include_radiation    = .true.
 include_neutral_dens = .true.
@@ -268,7 +277,8 @@ write(*,*) 'include_Jpol      =', include_Jpol
 write(*,*) 'include_bootstrap =', include_bootstrap
 write(*,*) 'include_psi_norm  =', include_psi_norm
 write(*,*) 'include_projections =', include_projections
-write(*,*) 'include_saw_ene =', include_saw_ene
+write(*,*) 'include_saw_ene     =', include_saw_ene
+write(*,*) 'include_seed_diag   =', include_seed_diag
 
 if (include_projections) then
   write(*,*) ' -proj_basename =', trim(proj_basename)
@@ -373,6 +383,10 @@ endif
 
 if (include_psi_norm) then
   call add_vtk_entry('psi_norm    ', 'psi_norm    ',    i_psin, n_scalars, si_units, scalar_names)
+endif
+if (include_seed_diag) then
+  call add_vtk_entry('psi_seed    ', 'psi_seed    ', i_psiseed_vtk, n_scalars, si_units, scalar_names)
+  call add_vtk_entry('jseed_src   ', 'jseed_src   ',   i_jseed_vtk, n_scalars, si_units, scalar_names)
 endif
 
 if (include_gvec_field) then
@@ -508,6 +522,30 @@ nnoel = 4
 nel   = (nsub-1)*(nsub-1)*element_list%n_elements
 allocate(ien(nnoel,nel))
 
+! --- Always compute q-profile for seed diagnostics (before element loop)
+if (num_seed_islands > 0) then
+  call bootstrap_get_q_and_ft_splines(0,node_list, element_list, ES%psi_axis, ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint)
+end if
+if (num_seed_islands > 0) then
+  do i_seed = 1, num_seed_islands
+    if (seed_q(i_seed) > 0.d0) then
+      psi_n_tmp_vtk = get_psi_n_from_q(seed_q(i_seed))
+      if (psi_n_tmp_vtk >= 0.d0) then
+        seed_psin(i_seed) = psi_n_tmp_vtk
+        if (seed_m_pol(i_seed) == 0 .and. seed_n_tor(i_seed) /= 0) then
+          seed_m_pol(i_seed) = nint(seed_q(i_seed) * dble(seed_n_tor(i_seed)))
+        end if
+        ! Auto-compute jseed amplitude from island width (same as seed_current_source)
+        if (seed_type(i_seed) == 0 .and. seed_amplitude(i_seed) == 0.d0) then
+          seed_amplitude(i_seed) = nu_jec_fast * (seed_width(i_seed) / 4.d0)**2 &
+                                * abs(get_dq_dpsi(seed_psin(i_seed))) &
+                                * dble(seed_n_tor(i_seed)) * dble(seed_m_pol(i_seed))
+        end if
+      end if
+    end if
+  end do
+end if
+
 inode   = 0
 ielm    = 0
 scalars = 0.d0
@@ -523,6 +561,19 @@ if (bootstrap) then
   call bootstrap_get_q_and_ft_splines(0,node_list, element_list, ES%psi_axis, ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint)
   call bootstrap_get_averaged_j_spline(0,node_list, element_list, ES%psi_axis, ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint)
 endif
+
+! --- Initialize straight-field-line angle lookup for seed diagnostic
+if (num_seed_islands > 0 .and. include_seed_diag) then
+  call seed_init_theta_lookup(node_list, element_list, ES)
+  if (my_id == 0) then
+    open(iseed_scan, file='seed_theta_scan.dat', status='replace')
+    write(iseed_scan, '(A)') '# Seed source theta scan at phi=0'
+    write(iseed_scan, '(A,F8.4,A,F8.4)') '# psi0_seed =', seed_psin(1), '  seed_width =', seed_width(1)
+    write(iseed_scan, '(A,I0,A,I0)') '# m_pol =', seed_m_pol(1), '  n_tor =', seed_n_tor(1)
+    write(iseed_scan, '(A)') '# theta_geom  theta_star  psi_n  radial_gauss  cos(m*theta_geom)  cos(m*theta_star)  source_geom  source_star'
+    write(iseed_scan, '(A)') '# ----------------------------------------------------------------------------------------------------'
+  end if
+end if
 
 grad_psi = 0.d0
 
@@ -726,6 +777,53 @@ do i=1,element_list%n_elements
       ! old values back to normal
       i_tor = i_tor_old
 
+      !====================== --- seed island diagnostics (shared, before i_tor branching)
+      if (include_seed_diag .and. num_seed_islands > 0 .and. i_plane == 1) then
+        call interp(node_list,element_list,i,var_psi,1,s,t,Ps0,Ps0_s,Ps0_t,Ps0_st,Ps0_ss,Ps0_tt)
+        psi_norm = get_psi_n(Ps0, Z)
+        psi0_seed  = seed_psin(1)
+        width_seed = max(seed_width(1), 1.d-6)
+        radial_gauss_diag = exp(-0.5d0 * ((psi_norm - psi0_seed) / width_seed)**2)
+        shape_seed = radial_gauss_diag
+        if (seed_type(1) == 0) then
+          ! jseed: analytical source shape (n=0, no helical structure)
+          scalars(inode, i_jseed_vtk) = shape_seed * seed_amplitude(1)
+          scalars(inode, i_psiseed_vtk) = 0.d0
+        else
+          ! psiseed: helical perturbation with (W/4)^2 Rutherford formula
+          psi_tilde_vtk = (seed_width(1) / 4.d0)**2 * abs(ES%psi_bnd - ES%psi_axis) &
+                        * abs(get_dq_dpsi(seed_psin(1))) &
+                        * (dble(seed_n_tor(1)) / dble(seed_m_pol(1)))
+          if (seed_m_pol(1) > 0) then
+            theta_seed = atan2(Z - ES%Z_axis, R - ES%R_axis)
+            if (theta_seed < 0.d0) theta_seed = theta_seed + 2.d0*PI
+            ! Straight-field-line angle (falls back to geometric if lookup not init)
+            theta_star_seed = seed_lookup_theta_star(psi_norm, theta_seed)
+            ! VTK output: use theta_star for correct helical alignment
+            shape_seed = shape_seed * cos(dble(seed_m_pol(1)) * theta_star_seed &
+                         - dble(seed_n_tor(1)) * toroidal_angle)
+            ! --- Write theta scan data for points near the rational surface ---
+            if (radial_gauss_diag > 0.01d0) then
+              cos_geom = cos(dble(seed_m_pol(1)) * theta_seed &
+                           - dble(seed_n_tor(1)) * toroidal_angle)
+              cos_star = cos(dble(seed_m_pol(1)) * theta_star_seed &
+                           - dble(seed_n_tor(1)) * toroidal_angle)
+              ! Temporal envelope: assume fully on (step >> ramp_steps for continuous mode)
+              t_env_diag = 1.d0
+              source_geom = radial_gauss_diag * cos_geom * t_env_diag * psi_tilde_vtk
+              source_star = radial_gauss_diag * cos_star * t_env_diag * psi_tilde_vtk
+              write(iseed_scan, '(4F12.6, 2F10.4, 2E15.6)') &
+                theta_seed, theta_star_seed, psi_norm, radial_gauss_diag, &
+                cos_geom, cos_star, source_geom, source_star
+            end if
+          end if
+          scalars(inode, i_psiseed_vtk) = shape_seed * psi_tilde_vtk
+          j_tilde_vtk = psi_tilde_vtk * dble(seed_m_pol(1))**2 &
+                      / max(abs(ES%psi_bnd - ES%psi_axis), 1.d-10)
+          scalars(inode, i_jseed_vtk) = shape_seed * j_tilde_vtk
+        end if
+      end if
+
       !====================== --- specific for NON-axisymmetric quantities
       ! 2 cases, depending on the value of i_tor chosen
       if ((i_tor .ge. 1) .and. (i_tor .le. n_tor)) then
@@ -796,6 +894,7 @@ do i=1,element_list%n_elements
           error = psi_J - R_p  ! "error" in Grad_Shafranov equilibrium force balance
 #endif
         endif  ! xjac check
+
         if (include_electric_field) then
           vectors(inode,:,i_vec_E) =  (/ E_R, E_Z, E_phi /)
         endif
@@ -1413,6 +1512,12 @@ do i=1,element_list%n_elements
   enddo
 
 enddo  ! n_elements
+
+! --- Close seed theta scan file
+if (num_seed_islands > 0 .and. include_seed_diag) then
+  close(iseed_scan)
+  if (my_id == 0) write(*,*) 'Seed theta scan written to seed_theta_scan.dat'
+end if
 
 #if (!defined WITH_Impurities)
   if (deuterium_adas)  ad_deuterium =  read_adf11(0,'96_h',trim(adas_dir)) !< for both include_radiation and include_neutral_dens
