@@ -54,8 +54,11 @@ use phys_module, only: nstep_particles, nsubstep_particles, tstep_particles, nou
 use phys_module, only: deuterium_adas,sqrt_mu0_over_rho0
 use phys_module, only: filter_perp, filter_hyper, filter_par, filter_perp_n0, filter_hyper_n0, filter_par_n0
 use phys_module, only: apply_dirichlet_proj, part_group_configs, init_particles_only
-use phys_module, only: use_manual_random_seed, manual_seed
-use phys_module, only: use_imp_adas, nimp_bg 
+use phys_module, only: use_manual_random_seed, manual_seed, adas_dir
+use phys_module, only: use_imp_adas, nimp_bg
+use phys_module, only: num_seed_islands
+
+use mod_seed_theta_lookup, only: seed_init_theta_lookup
 
 use mod_particle_group_id, only: matching_part_config_indices
 
@@ -124,6 +127,12 @@ call broadcast_boundary(sim%my_id, bnd_elm_list, bnd_node_list)
 call update_equil_state(sim%my_id, sim%fields%node_list, sim%fields%element_list, bnd_elm_list, xpoint, xcase )
 call broadcast_equil_state(sim%my_id)
 
+! --- Initialize straight-field-line angle lookup for seed island injection
+!     Must be done before the time loop so seed_current_source uses theta* instead of theta_geom
+if (num_seed_islands > 0) then
+  call seed_init_theta_lookup(sim%fields%node_list, sim%fields%element_list, ES)
+  if (sim%my_id == 0) write(*,*) 'Seed theta* lookup initialized in kinetic_main.'
+end if
 ! setting up the particles
 if (restart_particles) then
   ! reading the particles from a file
@@ -151,7 +160,7 @@ endif ! (restart_particles)
 
 
 ! Read Open ADAS data for plasma fluid
-if (deuterium_adas .and. use_kin_recomb_global) ad_deuterium =  read_adf11(sim%my_id,'96_h') !< move to core (jorek2_main for particles)
+if (deuterium_adas .and. use_kin_recomb_global) ad_deuterium =  read_adf11(sim%my_id,'96_h',trim(adas_dir)) !< move to core (jorek2_main for particles)
 
 #if (defined WITH_Impurities)
   ! --- Read ADAS data and generate coronal equilibrium if needed
@@ -161,7 +170,6 @@ if (deuterium_adas .and. use_kin_recomb_global) ad_deuterium =  read_adf11(sim%m
     call init_imp_adas(sim%my_id)
   endif
 #endif
-
 
 ! --- Setting up random numbers for ionisation probability
 seed = random_seed()
@@ -230,7 +238,7 @@ neutral_collisions = neutral_collisions_from_config(sim)
 jorek_feedback = new_projection(sim%fields%node_list, sim%fields%element_list, &
                                 filter_n0 = filter_perp_n0, filter_hyper_n0 = filter_hyper_n0, filter_parallel_n0=filter_par_n0,            &
                                 filter = filter_perp, filter_hyper = filter_hyper, filter_parallel=filter_par, fractional_digits = 9,       &
-                                do_zonal = .false., calc_integrals=.false., to_vtk=.false., to_h5 = .false., basename='projections', nsub=2, &
+                                do_zonal = .false., calc_integrals=.false., to_vtk=.true., to_h5 = .false., basename='projections', nsub=2, &
                                 do_dirichlet=apply_dirichlet_proj)
 aux_node_list => jorek_feedback%node_list
 
@@ -257,7 +265,6 @@ if(size(neutral_collisions) > 0) then
   ! define feedback size dependent on the number of variables required for coupling
   allocate(neutral_density_proj%rhs(n_order+1, n_vertex_max, sim%fields%element_list%n_elements, n_tor, 1))
 endif
-
 !if no %each_nstep_part was set, the least common multiple of all %each_nstep_part is 1 (meaning all particle-particle actions will happen only once each fluid timestep)
 if(sim%lcm_inner_loop == -9999991) sim%lcm_inner_loop = 1
 
@@ -349,7 +356,12 @@ do while (.not. sim%stop_now)
   do istep_inner_loop=inner_stepsize,sim%nstep_inner_loop,inner_stepsize
     write(header_line,'(A,I6,A,I6)') "Starting inner particle loop iteration getting us to istep_inner_loop=",istep_inner_loop," out of ",sim%nstep_inner_loop
     call write_to_outputfile(sim,header_line,next_block_write_conserv=.false.,next_block_write_timing=.false.)
+  enddo
 
+  do group_num=1, n_part_groups
+    call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj,inner_stepsize,edge_elm_template)
+  enddo
+  do istep_inner_loop=inner_stepsize,sim%nstep_inner_loop,inner_stepsize
     !updating inner loop steps
     sim%istep_inner_loop = istep_inner_loop
     if(istep_inner_loop == sim%nstep_inner_loop) then
@@ -368,7 +380,7 @@ do while (.not. sim%stop_now)
 
     ! evolution loop is called every inner particle step, for inner_stepsize number of steps at once
     do group_num=1, n_part_groups
-      call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj, inner_stepsize)
+      call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj, inner_stepsize, edge_elm_template)
     enddo  
 
     ! --- Handling the particles that left the domain
@@ -383,11 +395,11 @@ do while (.not. sim%stop_now)
         call wall_act_groups(i)%do(sim,.true.)
       enddo
     endif
-  
+
     !neutral self collisions, which need the projected neutral density
     if (size(neutral_collisions) > 0 .and. (mod(istep_inner_loop,gcd_neutral_collisions)==0 .or. last_step)) then
       call write_to_outputfile(sim, "Neutral self collisions")
-  
+
       ! update the neutral density which are necessary for the neutral collisions
       call get_neutral_density(sim,neutral_density_proj)
 

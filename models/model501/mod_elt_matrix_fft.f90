@@ -754,6 +754,8 @@ do ms=1, n_gauss
          m_i_over_m_imp = central_mass/40. ! Argon mass = 40 u
        case('Ne')
          m_i_over_m_imp = central_mass/20. ! Neon mass = 20 u
+       case('B')
+         m_i_over_m_imp = central_mass/11. ! Boron mass = 11 u
        case default
          write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown (in mod_injection_source.f90) !!'
          write(*,*) '=> We assume the gas is D2.'

@@ -60,6 +60,11 @@ module mod_particle_types
     integer*4 :: i_elm = 0        !< index in element_list. Negative indices indicate lost particles on the edge of - that element.
     integer*4 :: i_life = 0       !< particle lifetime index (i.e. is this still the same particle?)
     real*4    :: t_birth = 0.0    !< birth time of this particle
+    ! analytically tracked impact energy (not relying on Boris in sheath)
+    logical   :: in_sheath      = .false.  !< whether particle is inside sheath
+    real*8    :: impact_energy  = 0.d0     !< analytically tracked impact energy [eV]
+    real*8    :: sheath_phi_prev= 0.d0     !< sheath potential at previous step [V]
+    integer*1 :: sheath_q_prev  = 0        !< charge state at previous step
     !< zero means lost without location specification.
   contains
     procedure :: copy => copy_particle
@@ -592,6 +597,10 @@ contains
     call MPI_PACK(p_in%i_elm,1,MPI_INTEGER,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
     call MPI_PACK(p_in%i_life,1,MPI_INTEGER,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
     call MPI_PACK(p_in%t_birth,1,MPI_REAL,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
+    call MPI_PACK(p_in%in_sheath,1,MPI_LOGICAL,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
+    call MPI_PACK(p_in%impact_energy,1,MPI_DOUBLE_PRECISION,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
+    call MPI_PACK(p_in%sheath_phi_prev,1,MPI_DOUBLE_PRECISION,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
+    call MPI_PACK(p_in%sheath_q_prev,1,MPI_INTEGER1,buffer,particle_base_size,buff_position,MPI_COMM_WORLD,ierr)
   end subroutine mpi_pack_particle_base
 
   !> unpack the particle base type
@@ -611,6 +620,10 @@ contains
     call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%i_elm,1,MPI_INTEGER,MPI_COMM_WORLD,ierr)
     call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%i_life,1,MPI_INTEGER,MPI_COMM_WORLD,ierr)
     call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%t_birth,1,MPI_REAL,MPI_COMM_WORLD,ierr)
+    call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%in_sheath,1,MPI_LOGICAL,MPI_COMM_WORLD,ierr)
+    call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%impact_energy,1,MPI_DOUBLE_PRECISION,MPI_COMM_WORLD,ierr)
+    call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%sheath_phi_prev,1,MPI_DOUBLE_PRECISION,MPI_COMM_WORLD,ierr)
+    call MPI_UNPACK(buffer,particle_base_size,buff_position,p_out%sheath_q_prev,1,MPI_INTEGER1,MPI_COMM_WORLD,ierr)
   end subroutine mpi_unpack_particle_base
 
 !> Allocate and re-order a particle list in arrays

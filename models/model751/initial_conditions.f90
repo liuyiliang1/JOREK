@@ -9,6 +9,7 @@ use mod_poiss
 use equil_info
 use mod_interp, only: interp
 use mod_F_profile
+use mod_seed_theta_lookup, only: seed_init_theta_lookup
 
 implicit none
 
@@ -19,7 +20,7 @@ type (type_bnd_node_list)    :: bnd_node_list
 type (type_bnd_element_list) :: bnd_elm_list
 
 integer    :: my_id, i, in, mm, i_elm, ifail, xcase2
-integer    :: index0, index, n_node_start, n_index_start, j, k, ivar
+integer    :: index0, index, n_node_start, n_index_start, j, k, ivar, iseed
 real*8     :: amplitude, psi, psi_n, theta
 real*8     :: zn, dn_dpsi, dn_dpsi2, dn_dz, dn_dz2, dn_dpsi_dz, dn_dpsi3, dn_dpsi2_dz, dn_dpsi_dz2
 real*8     :: zTi, dTi_dpsi, dTi_dpsi2, dTi_dz, dTi_dz2, dTi_dpsi_dz, dTi_dpsi3, dTi_dpsi2_dz, dTi_dpsi_dz2
@@ -226,6 +227,31 @@ do in=2,n_tor
   endif
 
 enddo
+
+!---------------------------- seed island initialization
+if (my_id == 0) then
+  if (num_seed_islands > 0) then
+    write(*,*) 'Model 751: seed islands active.'
+    write(*,*) 'Number of seed islands:', num_seed_islands
+    if (seed_continuous) then
+      write(*,*) 'Continuous injection mode.'
+    else
+      write(*,*) 'One-time injection mode.'
+    end if
+    do iseed = 1, num_seed_islands
+      write(*,'(A,I2,A,F8.4,A,F8.4,A,I4,A,I4,A,F8.4)') &
+        '  Seed ', iseed, ': psin=', seed_psin(iseed), &
+        ' width=', seed_width(iseed), &
+        ' n_tor=', seed_n_tor(iseed), ' m_pol=', seed_m_pol(iseed), &
+        ' q=', seed_q(iseed)
+    enddo
+  endif
+endif
+
+! Initialize straight-field-line angle lookup for seed perturbation
+if (num_seed_islands > 0) then
+  call seed_init_theta_lookup(node_list, element_list, ES)
+end if
 
 return
 end

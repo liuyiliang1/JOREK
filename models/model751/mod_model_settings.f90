@@ -17,7 +17,7 @@ logical, parameter :: with_refluid    = .false. ! not yet possible to switch
 ! The following line is needed by ./util/config.sh:
 ! #SETTINGS# with_TiTe with_neutrals with_impurities
 
-integer, parameter :: jorek_model    = 750
+integer, parameter :: jorek_model    = 751
 
 logical, parameter :: hydrodynamics   = .false.
 logical, parameter :: reduced_MHD     = .false.

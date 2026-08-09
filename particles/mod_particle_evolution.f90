@@ -13,6 +13,8 @@ module mod_particle_evolution
     use mod_basisfunctions
     use mod_particle_types, only: copy_particle_kinetic_leapfrog
     use mod_sampling, only: boxmueller_transform,sample_chi_squared_3
+    use mod_sheath
+    use mod_edge_elements
     use mod_coordinate_transforms, only: vector_cartesian_to_cylindrical
     !$ use omp_lib
 
@@ -25,7 +27,7 @@ contains
   !> - performs coupling scheme specific physics (e.g. ionisation, radiation... etc)
   !> - creates the feedback rhs required for projections of kinetic variables
   !> - evolves the location and velocity of the particles based on the background plasma (pushing)
-  subroutine evolve_particle_group(sim, group_num, jorek_feedback, rng, tstep_part_adj, nstep_part_adj)
+  subroutine evolve_particle_group(sim, group_num, jorek_feedback, rng, tstep_part_adj, nstep_part_adj,edge_elm_template)
     use mod_project_particles
     use mod_random_seed
     use mod_interp, only: mode_moivre
@@ -41,6 +43,7 @@ contains
     type(pcg32_rng), dimension(:), allocatable, intent(inout) :: rng
     real*8,  intent(in)                                       :: tstep_part_adj
     integer, intent(in)                                       :: nstep_part_adj
+    type(edge_elements), optional, intent(in)                 :: edge_elm_template   !if use_sheath is true, pass edge elements
     
     real*8,allocatable :: feedback_rhs(:,:,:,:,:)
     type (type_node_list),         pointer :: feedback_nodelist
@@ -49,7 +52,7 @@ contains
     character(len=3) :: cs
 
     !> Coupling scheme specific
-    integer :: imp_q_idx
+    integer :: imp_q_idx, zeff_idx
 
     !> ================================ INITIALISATION =======================================
     part_group => sim%groups(group_num)
@@ -58,6 +61,7 @@ contains
     !> if ics, determine index for impurity charge projection
     if (part_group%coupling_scheme == 'ics') then
       imp_q_idx = ics_indices_kin(part_group%ics_group_idx)
+      zeff_idx  = zeff_indices_kin(part_group%ics_group_idx)
     endif
 
     !> Set up storage of feedback
@@ -75,9 +79,9 @@ contains
 
     select case (part_group%coupling_scheme)
       case ('ncs')
-        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj)
+        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj,nstep_part_adj,edge_elm_template=edge_elm_template)
       case ('ics')
-        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx)
+        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj,imp_q_idx, edge_elm_template, zeff_idx)
       case ('rep')
         call evolve_REs(sim, group_num, feedback_rhs, rng, tstep_part_adj, nstep_part_adj)
       case ('epf')
@@ -90,8 +94,14 @@ contains
     ! ================================= CONSTRUCT PROJECTION RHS =======================================
     !> enter gathered rhs into jorek_feedback
     if (part_group%coupling_scheme == 'ncs' .or. part_group%coupling_scheme == 'ics') then
-      ! To get rates in the feedback, we need to divide the change by the time. Since we keep adding changes each evolve_particle_group call until 
+      ! To get rates in the feedback, we need to divide the change by the time. Since we keep adding changes each evolve_particle_group call until
       ! the rhs is reset to 0 when the jorek_feedback is projected (each fluid tstep), we should divide by sim%tstep_fluid_si
+
+      ! --- NaN guard: skip feedback if any NaN detected (prevents particle NaN from corrupting MHD solver)
+      if (any(feedback_rhs /= feedback_rhs)) then
+        write(*,*) "WARNING: NaN detected in particle feedback, skipping this call for group ", part_group%id
+        feedback_rhs = 0.d0
+      endif
       jorek_feedback%rhs(:,:,:,:,mom_par_idx_kin) = jorek_feedback%rhs(:,:,:,:,mom_par_idx_kin) + feedback_rhs(:,:,:,:,mom_par_idx_kin) / sim%tstep_fluid_si
 #ifdef WITH_TiTe
       jorek_feedback%rhs(:,:,:,:,E_Te_idx_kin)    = jorek_feedback%rhs(:,:,:,:,E_Te_idx_kin)    + feedback_rhs(:,:,:,:,E_Te_idx_kin)    / sim%tstep_fluid_si
@@ -109,6 +119,7 @@ contains
       !> ics specific projections
       if (part_group%coupling_scheme == 'ics') then
         jorek_feedback%rhs(:,:,:,:,imp_q_idx)     = jorek_feedback%rhs(:,:,:,:,imp_q_idx)       + feedback_rhs(:,:,:,:,imp_q_idx)       / (sim%tstep_fluid_si/tstep_part_adj)
+        jorek_feedback%rhs(:,:,:,:,zeff_idx)      = jorek_feedback%rhs(:,:,:,:,zeff_idx)        + feedback_rhs(:,:,:,:,zeff_idx)        / (sim%tstep_fluid_si/tstep_part_adj)
         jorek_feedback%rhs(:,:,:,:,7)             = jorek_feedback%rhs(:,:,:,:,7)               + feedback_rhs(:,:,:,:,7)               / sim%tstep_fluid_si                  !< extra projection (impurity radiated power)
         jorek_feedback%rhs(:,:,:,:,8)             = jorek_feedback%rhs(:,:,:,:,8)               + feedback_rhs(:,:,:,:,8)               / (sim%tstep_fluid_si/tstep_part_adj) !< extra projection (impurity density)
       endif
@@ -254,7 +265,7 @@ contains
   !> The two coupling schemes are handled by the same function due to large degree of overlap in the physics 
   !> experienced by neutrals and impurities. 
   !> The pushing of the particle is also done here
-  subroutine evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx)
+  subroutine evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx, edge_elm_template, zeff_idx)
     use mod_collisions
     use mod_ionisation_recombination
 
@@ -268,6 +279,8 @@ contains
     real*8,                            intent(in)             :: tstep_part_adj
     integer,                           intent(in)             :: nstep_part_adj
     integer, optional,                 intent(in)             :: imp_q_idx
+    type(edge_elements), optional,     intent(in)             :: edge_elm_template   !if use_sheath is true, pass edge elements
+    integer, optional,                 intent(in)             :: zeff_idx
 
 
     real*8, parameter  :: H_binding_energy = 2.18d-18
@@ -280,7 +293,7 @@ contains
     !> Coupling --------------------------------------
     real*8    :: density_source, mom_par_source, energy_source
     real*8    :: energy_source_Te, energy_source_Ti
-    real*8    :: density_fb, mom_par_fb, E_fb, imp_q_fb, imp_density_fb, imp_P_rad_fb, extra_proj, imp_P_line_rad_fb
+    real*8    :: density_fb, mom_par_fb, E_fb, imp_q_fb, imp_q2_fb, imp_density_fb, imp_P_rad_fb, extra_proj, imp_P_line_rad_fb
     real*8    :: E_fb_Te, E_fb_Ti
     real*8    :: v_old(3), v_new(3), T_eV, B_norm(3)
     real*8    :: vvector(3), ran_norm(4)
@@ -301,6 +314,9 @@ contains
     real*8    :: coulomb_log, kTb, n_b, v_b(3,n_coll) 
     real*8, dimension(1) :: P, P_s, P_t, P_phi, P_time
     real*8    :: delta_E_kin
+
+    !> sheath related
+    real*8    :: E_sheath(3), phi_sheath
 
     !> System variables ------------------------------
     type(particle_kinetic_leapfrog) :: particle_tmp
@@ -340,22 +356,23 @@ contains
 #endif
     !$omp schedule(runtime)                                                                               &
     !$omp shared(sim, group_num, nstep_part_adj, tstep_part_adj, rng,                                    &
-    !$omp rho_norm, t_norm, v_norm, E_norm, M_norm, N_norm, part_kill_ratio,                              &    
+    !$omp rho_norm, t_norm, v_norm, E_norm, M_norm, N_norm, part_kill_ratio,                              &
     !$omp rho_idx_kin, mom_par_idx_kin,                                                                   &
 #ifdef WITH_TiTe
     !$omp E_Te_idx_kin, E_Ti_idx_kin,                                                                     &
 #else
     !$omp E_idx_kin,                                                                                      &
 #endif
-    !$omp imp_q_idx, ics_indices_kin,                                                                     &
+    !$omp imp_q_idx, zeff_idx, ics_indices_kin,                                                           &
+    !$omp edge_elm_template,                                                                              &
     !$omp CENTRAL_DENSITY, CENTRAL_MASS, feedback_nodelist, feedback_element_list)                        &
     !$omp private(particle_tmp, i_rng, i, j, k, l, m, t, E, B, psi, U, rz_old, st_old,                    &
     !$omp i_elm_old, i_elm, n_i, n_e, T_e, T_i, imp_charge_density, PLT, PRB, Srec, q_old,                &
     !$omp ionize_rate, ionize_prob, ionize_ran, ionize_ran_imp, ionize_source, ionize_energy,             &
     !$omp cx_rate, cx_prob, cx_source, cx_energy, cx_ran, grad_T_i,                                       &
     !$omp kinetic_energy, line_rad_energy, radiation_energy, binding_energy,                              &  
-    !$omp R_s, R_t, Z_g, Z_s, Z_t, R, Z, xjac, HH, HH_s, HH_t, HZ, ifail,                                 &
-    !$omp density_fb, E_fb, mom_par_fb,extra_proj, imp_q_fb, imp_density_fb, imp_P_rad_fb,                &
+    !$omp R_s, R_t, Z_g, Z_s, Z_t, R, Z, xjac, HH, HH_s, HH_t, HZ, ifail,E_sheath, phi_sheath,             &
+    !$omp density_fb, E_fb, mom_par_fb,extra_proj, imp_q_fb, imp_q2_fb, imp_density_fb, imp_P_rad_fb,     &
     !$omp density_source, mom_par_source, energy_source, v_old, v_new, T_eV, imp_P_line_rad_fb,           &
     !$omp m_b, kTb,coulomb_log ,n_b,v_b, ran, ran2, q_b, q, E_fb_Te, E_fb_Ti,                             &
     !$omp P, P_s, P_t, P_phi, P_time, limits, limits_coll, energy_source_Te, energy_source_Ti,            &
@@ -384,7 +401,7 @@ contains
         rz_old    = particle_tmp%x(1:2)
         st_old    = particle_tmp%st
         i_elm_old = particle_tmp%i_elm
-        q_old     = particle_tmp%q 
+        q_old     = particle_tmp%q
         v_old     = particle_tmp%v
 
         v_new = v_old
@@ -411,9 +428,10 @@ contains
           endif
         enddo
         
-        !> adjust n_e based on impurity charge
-        n_e = n_i + max(0.d0, imp_charge_density)
+        !> adjust n_e based on impurity charge (imp_q is in JOREK units, convert to SI)
+        n_e = n_i + max(0.d0, imp_charge_density * n_norm)
         
+        limits = n_e_raw .le. 1e14 .or. T_e_raw * K_BOLTZ / EL_CHG .le. 10.d0 !ADAS limits
         !> check that particle weight is non negative
         if (particle_tmp%weight .lt. 0.0d0) write(*,*) "Negative particle weight p(j)%w=", particle_tmp%weight
         
@@ -492,9 +510,11 @@ contains
           
           !> check that the energy feedback is valid
           if (isnan(ionize_source * ionize_energy + delta_E_kin - line_rad_energy)) then
+            !$omp critical
             write(*,*) "ionize_energy", ionize_energy
             write(*,*) "delta_E_kin", delta_E_kin
             write(*,*) "line_rad_energy", line_rad_energy
+            !$omp end critical
             particle_tmp%i_elm  = 0
             CYCLE !< don't feed this particle into the feedback
           endif
@@ -627,14 +647,43 @@ contains
 
           !> check that the particle energy sources are valid
           if (isnan(imp_charge_density + ionize_energy + radiation_energy + delta_E_kin)) then
+            !$omp critical
             write(*,*) "imp_charge_density", imp_charge_density
             write(*,*) "ionize_energy", ionize_energy
             write(*,*) "rad_energy", radiation_energy
             write(*,*) "delta_E_kin", delta_E_kin
+            !$omp end critical
             particle_tmp%i_elm  = 0
             CYCLE !< don't feed this particle into the feedback
           endif
       
+          !> CALCULATE THE SHEATH ELECTRON FIELD
+          if(sim%groups(group_num)%use_sheath)then
+            call calc_E_sheath(feedback_nodelist, feedback_element_list,edge_elm_template,particle_tmp%i_elm,particle_tmp%x,particle_tmp%st,kTb/EL_CHG,kTb/EL_CHG,B,n_b,E_sheath,phi_optional=phi_sheath)
+            E=E + E_sheath
+            ! --- analytic impact energy tracking (not relying on Boris in sheath) ---
+            if (abs(phi_sheath) .gt. 1.d-12) then
+              if (.not. particle_tmp%in_sheath) then
+                ! entering sheath: snapshot kinetic energy from Boris
+                particle_tmp%in_sheath       = .true.
+                particle_tmp%impact_energy   = 0.5d0 * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT * dot_product(particle_tmp%v, particle_tmp%v) / EL_CHG
+                particle_tmp%sheath_phi_prev = phi_sheath
+                particle_tmp%sheath_q_prev   = particle_tmp%q
+              else if (particle_tmp%q .ne. 0 .and. particle_tmp%sheath_q_prev .ne. 0) then
+                ! analytic potential energy update: ΔE = |q| * (φ_prev - φ_current)
+                particle_tmp%impact_energy   = particle_tmp%impact_energy + abs(dble(particle_tmp%sheath_q_prev)) * (particle_tmp%sheath_phi_prev - phi_sheath)
+                particle_tmp%sheath_phi_prev = phi_sheath
+                particle_tmp%sheath_q_prev   = particle_tmp%q
+              else if (particle_tmp%q .ne. 0 .and. particle_tmp%sheath_q_prev .eq. 0) then
+                ! newly ionized inside sheath: record new state
+                particle_tmp%sheath_phi_prev = phi_sheath
+                particle_tmp%sheath_q_prev   = particle_tmp%q
+              end if
+            else
+              particle_tmp%in_sheath = .false.
+            end if
+          end if
+
           !> ----- CONSTRUCT FEEDBACK -----
           !> the feedback per particle per time step is accumulated which is then divided by gather time later
 #ifdef WITH_TiTe
@@ -664,8 +713,9 @@ contains
 #else
               E_fb           = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source     * t_norm / E_norm
 #endif
-              imp_q_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight * particle_tmp%q
-              imp_density_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight
+              imp_q_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight * particle_tmp%q      / n_norm
+              imp_q2_fb      = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight * particle_tmp%q**2 / n_norm
+              imp_density_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight                        / n_norm
               imp_P_rad_fb   = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * radiation_energy / tstep_part_adj
               do i_tor=1,n_tor
 #ifdef WITH_TiTe
@@ -675,7 +725,9 @@ contains
                 feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       = feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       + HZ(i_tor) * E_fb
 #endif
                 feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) = feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) + HZ(i_tor) * mom_par_fb
-                feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       = feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       + HZ(i_tor) * imp_q_fb       ! impurity charge density
+                feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       = feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       + HZ(i_tor) * imp_q_fb       ! impurity charge density (sum q*weight)
+                if (present(zeff_idx)) &
+                feedback_rhs(m,l,i_elm_old,i_tor,zeff_idx)        = feedback_rhs(m,l,i_elm_old,i_tor,zeff_idx)        + HZ(i_tor) * imp_q2_fb      ! impurity charge squared (sum q^2*weight) for Z_eff
                 feedback_rhs(m,l,i_elm_old,i_tor,7)               = feedback_rhs(m,l,i_elm_old,i_tor,7)               + HZ(i_tor) * imp_P_rad_fb   ! impurity radiated power [to be moved to diag feedback]
                 feedback_rhs(m,l,i_elm_old,i_tor,8)               = feedback_rhs(m,l,i_elm_old,i_tor,8)               + HZ(i_tor) * imp_density_fb ! impurity density [to be moved to diag feedback]
               enddo

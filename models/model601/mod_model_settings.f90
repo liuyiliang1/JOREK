@@ -5,7 +5,7 @@ implicit none
 
 logical, parameter :: with_vpar       = .true.
 logical, parameter :: with_TiTe       = .false.
-logical, parameter :: with_neutrals   = .false. 
+logical, parameter :: with_neutrals   = .false.
 logical, parameter :: with_impurities = .false.
 logical, parameter :: with_refluid    = .false. ! not yet possible to switch
 
@@ -18,7 +18,7 @@ logical, parameter :: with_refluid    = .false. ! not yet possible to switch
 ! The following line is needed by ./util/config.sh:
 ! #SETTINGS# with_vpar with_TiTe with_neutrals with_impurities
 
-integer, parameter :: jorek_model     = 600
+integer, parameter :: jorek_model     = 601
 
 logical, parameter :: hydrodynamics   = .false.
 logical, parameter :: reduced_MHD     = .true.
@@ -78,11 +78,11 @@ integer,  parameter :: n_terms_psi  = 5
 integer,  parameter :: n_terms_u    = 14
 integer,  parameter :: n_terms_zj   = 1
 integer,  parameter :: n_terms_w    = 1
-integer,  parameter :: n_terms_rho  = 14
+integer,  parameter :: n_terms_rho  = 13
 integer,  parameter :: n_terms_T    = 26
 integer,  parameter :: n_terms_Te   = 20
 integer,  parameter :: n_terms_Ti   = 18
-integer,  parameter :: n_terms_vpar = 13
+integer,  parameter :: n_terms_vpar = 12
 integer,  parameter :: n_terms_rhon = 7
 integer,  parameter :: n_terms_rhoimp = 10
 
@@ -129,8 +129,7 @@ character*36, dimension(n_terms_u),     parameter :: u_term_names=  &
                                                  'rho_Eq__zeta_time_evol    ', &  ! 10:
                                                  'rho_Eq__Dperp_num_term    ', &  ! 11:
                                                  'rho_Eq__tg_num_term       ', &  ! 12:
-                                                 'rho_Eq__aux_density_source', &  ! 13:
-                                                 'rho_Eq__inward_pinch      '/)   ! 14:
+                                                 'rho_Eq__aux_density_source'/)   ! 13:
 
 character*36, dimension(n_terms_T),     parameter :: T_term_names=  &
                                               (/ 'T_Eq__ext_heat_source        ', &  !  1:
@@ -217,8 +216,6 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'vpar_Eq__viscopar_term          ', &  !  9:
                                                  'vpar_Eq__neoclassical_term      ', &  ! 10:
                                                  'vpar_Eq__aux_particle_source    ', &  ! 11:
-                                                 'vpar_Eq__aux_par_momentum_source', &  ! 12:
-                                                 'vpar_Eq__inward_pinch           '/)   ! 13: 
                                                  'vpar_Eq__aux_par_momentum_source'/)   ! 12:
 
  character*36, dimension(n_terms_rhon), parameter :: rhon_term_names=  &

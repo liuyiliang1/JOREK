@@ -53,7 +53,7 @@ module mod_particle_wall_interaction
   use mod_io_actions, only: io_action
   use mod_sampling
   use mod_particle_types
-  use mod_eckstein_y_ye
+  use mod_eckstein_thompson
   use constants
   use mod_rng, only: type_rng, setup_shared_rngs
   use mod_boundary, only: wall_normal_vector
@@ -90,7 +90,7 @@ module mod_particle_wall_interaction
     type(eckstein_sputtered_energy_coeff) :: energy !< eckstein coefficients for determining energy of the resulting particle
     type(thompson_dist)                   :: E_dist = thompson_dist(E_b = 8.7d0, n=2) !< produces energies in eV (value for W default)
     logical :: use_thompson = .false. !< Use a thompson distribution for the energy of sputtered particles
-    logical :: use_Yn_func  = .false. !< Use Ecksteins interpolating functions instead of interpolating manually
+    logical :: use_Yn_func  = .true. !< Use Ecksteins interpolating functions instead of interpolating manually
     
     class(type_rng), dimension(:), allocatable :: rng !< one RNG per openmp thread
 
@@ -872,7 +872,7 @@ subroutine load_eckstein_data(this, sim)
   this%yield%use_Yn_func = this%use_Yn_func
 
   ! reading the yield data
-  call this%yield%read()
+  call this%yield%initialise(Z_origin,Z_target)
 
   if (.not. this%use_thompson) then ! use eckstein coefficients
     ! setting the energy object
@@ -881,7 +881,7 @@ subroutine load_eckstein_data(this, sim)
     this%energy%use_Yn_func = this%use_Yn_func
 
     !reading the energy data
-    call this%energy%read()
+    call this%energy%initialise(Z_origin,Z_target)
   end if
 end subroutine load_eckstein_data
 
@@ -981,7 +981,9 @@ subroutine do_wall_action(this, sim, ev)
     if(.not. (mod(sim%istep_inner_loop,this%each_nstep_part)==0 .or. sim%istep_inner_loop==sim%nstep_inner_loop)) return
   endif
 
+  !$omp master
   if(sim%my_id == 0) write(*,"(A)") "--- wall_action: "//trim(this%name)//" --- "
+  !$omp end master
 
   ! check whether the constructor was used (so that all other sanity checks can be done once in the constructor)
   if (.not. this%constructed) then
@@ -1040,7 +1042,7 @@ subroutine fluid2part_action(this, sim)
   integer :: q, Z
   real*8 :: E !< [eV] particle energy  (eV because of eckstein coeffs).
   real*8 :: n_e, T_e, T_i, Te_eV, Ti_eV
-  real*8,  allocatable :: xyz_sampled(:,:), st_sampled(:,:), rng_sample(:,:) !< (3,n_supers_loc), (2,n_supers_loc), (6,n_supers_loc)
+  real*8,  allocatable :: xyz_sampled(:,:), st_sampled(:,:), rng_sample(:,:) !< (3,n_supers_loc), (2,n_supers_loc), (3,n_supers_loc)
   integer, allocatable :: i_elm_sampled(:) !< (n_supers_loc)
   logical :: do_main !> whether to do the main calculation (we can't just return early because that breaks the MPI_REDUCE at the end of the subroutine)
 
@@ -1082,7 +1084,7 @@ subroutine fluid2part_action(this, sim)
   end if
   
   if(do_main) then  
-    allocate(rng_sample(6,size(i_free)))
+    allocate(rng_sample(3,size(i_free)))
     allocate(xyz_sampled(3,size(i_free)))
     allocate(st_sampled(2,size(i_free)))
     allocate(i_elm_sampled(size(i_free)))
@@ -1166,9 +1168,9 @@ subroutine fluid2part_action(this, sim)
       case("wall recomb")
         ! determine E
 #ifdef WITH_TiTe
-        call sample_fluid_particle_energy(Te_eV, rng_sample(4:6,j), Z, E, Ti_eV=Ti_eV)
+        call sample_fluid_particle_energy(Te_eV, rng_sample(1:3,j), Z, E, Ti_eV=Ti_eV)
 #else
-        call sample_fluid_particle_energy(Te_eV, rng_sample(4:6,j), Z, E)
+        call sample_fluid_particle_energy(Te_eV, rng_sample(1:3,j), Z, E)
 #endif
 
         ! determine outcoming particle
@@ -1293,7 +1295,7 @@ subroutine part2self_action(this, sim)
   !$omp parallel default(shared) & ! workaround for Error: ‘__vtab_mod_pcg32_rng_Pcg32_rng’ not specified in enclosing ‘parallel’
 #else
   !$omp parallel default(none) &
-  !$omp shared(this, sim)      & 
+  !$omp shared(this, sim, pa)  &
 #endif
   !$omp private(i_rng)         &
   !$omp reduction(+:diagnostics)
@@ -1313,10 +1315,13 @@ subroutine part2self_action(this, sim)
 
     !> Place particle back into domain
     pa(j)%i_elm = -pa(j)%i_elm !reset i_elm to positive value (i_elm, s, t from where particle was lost at the boundary are known from find_RZ_nearby in mod_particle_evolution)
-    call interp_RZ(sim%fields%node_list,sim%fields%element_list,pa(j)%i_elm,pa(j)%st(1),pa(j)%st(2),pa(j)%x(1),pa(j)%x(2)) !get corresponding R,Z at boundary
-    
-    !> do single particle wall interaction
-    call single_self_interaction(this, sim, pa(j), this%rng(i_rng), diagnostics)
+    if (pa(j)%i_elm .gt. 0 .and. pa(j)%i_elm .le. sim%fields%element_list%n_elements) then
+      call interp_RZ(sim%fields%node_list,sim%fields%element_list,pa(j)%i_elm,pa(j)%st(1),pa(j)%st(2),pa(j)%x(1),pa(j)%x(2)) !get corresponding R,Z at boundary
+      !> do single particle wall interaction
+      call single_self_interaction(this, sim, pa(j), this%rng(i_rng), diagnostics)
+    else
+      pa(j)%i_elm = 0 ! discard particle with invalid boundary element
+    end if
   end do
   !$omp end do
   !$omp end parallel
@@ -1344,11 +1349,11 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
   character(len=*),  optional,             intent(in)    :: type_in            !< type of single interaction (either "self sputter" or "reflection") (if not specified will be set to this%type) 
   logical,           optional,             intent(in)    :: weight_preadjusted !< whether the weight was already adjusted beforehand to take the yield into account (true) or not (false, default)
 
-  real*8 :: n_e, T_e, T_i, theta
+  real*8 :: theta
   real*8 :: E !<[eV] particle energy. E is in [eV] in this subroutine, because of eckstein coeffs.
   real*8 :: vector_normal(3)
   logical :: fast_reflection !< whether the reflection is a fast reflection or a thermal desorption (not that release is instant, but the energy of the reflected particle is different)
-  real*8 :: yield, energy_coeff, Te_eV, Ti_eV, fast_reflect_chance, v_new
+  real*8 :: yield, energy_coeff, fast_reflect_chance, v_new
   real*8 :: u(2), p_kill(1)
   character(len=20) :: local_type !< which single particle interaction to do, used to call self interaction from within fluid2part_action (=type_in if present, else =this%type)
   logical :: skip_yield !< if weight_preadjusted = true, then the yield calculation should be skipped
@@ -1399,17 +1404,10 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
   !   !!$omp end critical
   ! end if
 
-  if (trim(local_type) /= "pump") then
-    ! Update the particle energy from the potential drop in the sheath
-#ifdef WITH_TiTe
-    call sim%fields%calc_NeTeTi(sim%time, particle%i_elm, particle%st, particle%x(3), n_e=n_e, T_i=T_i, T_e=T_e)
-    Ti_eV = T_i * K_BOLTZ / EL_CHG
-#else
-    call sim%fields%calc_NeTeTi(sim%time, particle%i_elm, particle%st, particle%x(3), n_e=n_e, T_e=T_e)
-#endif
-    Te_eV = T_e * K_BOLTZ / EL_CHG
-  
-    E = E + simple_potential_drop(int(particle%q,4),Te_eV)
+  ! --- use analytically tracked impact energy if available ---
+  if (particle%in_sheath) then
+    E = particle%impact_energy
+    particle%in_sheath = .false.
   end if
 
   ! store this particle's contribution to incoming particle, heatflux and flux onto the wall
@@ -1427,7 +1425,7 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
   case ("reflection")
     !> a particle can either bounce of the wall (fast_reflection=.true.) or be thermally released
     !> whether a particle reflects directly is determined through eckstein coefficients set for this goal
-    fast_reflect_chance = this%yield%interp(E,theta)
+    fast_reflect_chance = this%yield%interp(E,theta)  !for D or H, this is zero so no fast reflection, for impurities this can be significant
     
     call rng%next(u)
     if (u(1) .le. fast_reflect_chance) then
@@ -1445,8 +1443,13 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
     !> determine new energy
     if (fast_reflection) then
       ! still some energy and momentum can be lost at the reflection against the wall, this is modelled using another set of eckstein coefficients
-      energy_coeff = this%energy%interp(E,theta)
-      E = energy_coeff * E
+
+      !energy_coeff = this%energy%interp(E,theta)
+      !E = energy_coeff * E
+
+      !use thompson distribution for reflected particles
+      call ThompsonEne(E, this%energy%E_threshold,rng, E)
+      
 
       ! since we have wall_flux_in, and wall_flux_in = wall_flux_refl + wall_flux_therm, we also know wall_flux_thermal. Similarly we know wall_heat_thermal
       diagnostics(i_wall_flux_refl)   = diagnostics(i_wall_flux_refl) + particle%weight
@@ -1463,33 +1466,18 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
       yield = this%yield%interp(E,theta)
     end if
 
-    !> exponential self sputtering for yield > 1
-    if (yield .gt. 1.d0 + 1.d-12) then
-      !$omp critical
-      write(*,"(A,f5.0,A,f8.3)") "> 1 self-sputtering detected, E=", E, "yield=", yield
-      !$omp end critical
-    end if
+    !> exponential self sputtering for yield > 1 (silently capped)
+    if (yield .gt. 1.d0) yield = 1.d0
 
     !> storing this particle's contribution on a 2D edge element patch grid as diagnostic
     call particle_projection_diagnostic(this, sim, particle, E, yield)
 
     !> determining the energy of the particle post sputtering
-    if (this%use_thompson) then
-      call rng%next(u)
-      ! Option below to remove the highest 2% of the distribution by clipping u (hacky)
-      ! u = min(u, 0.98d0)
-      E = sample_dist(this%E_dist, u(1))
+    if (E .le. this%energy%E_threshold .or. E .le. 0.d0) then
+      ! incident energy too low for sputtering: thermal release
+      E = (800.d0 + 273.d0) * K_BOLTZ / EL_CHG
     else
-      !> avoiding numerical issues with E being too small to calculate energy_coeff
-      if (E < this%energy%E_threshold + 1d0) then
-        !$omp critical
-        write(*,*) "WARNING: E too small for yields",E,this%energy%E_threshold,"setting E to just above threshold, please expand coefficients range"
-        !$omp end critical
-        E = this%energy%E_threshold + 1d0
-      end if
-
-      energy_coeff = this%energy%interp(E,theta)
-      E = energy_coeff * E
+      call ThompsonEne(E, this%energy%E_threshold, rng, E)
     end if
 
   case default
@@ -1767,7 +1755,7 @@ subroutine project_sputter_vars_on_edge(this, sim)
       Z = this%fluid_Z
       m = atomic_weights(Z) * ATOMIC_MASS_UNIT
       
-      Gamma_d = n_e * abs(vpar) * norm2(B) * cos_alpha + n_e * c_s * c_angle
+      Gamma_d = n_e * abs(vpar) * norm2(B) * cos_alpha
 
       ! Assume an impact angle of 0!
       ! need the abs here because we cheat using negative numbers to indicate D, T
@@ -1777,7 +1765,7 @@ subroutine project_sputter_vars_on_edge(this, sim)
       case("wall recomb")
         yield = 1.d0 !<assuming complete wall saturation
       case("fluid sputter")
-        yield = fluid_sputtering_yield(this%yield, T_e * K_BOLTZ/EL_CHG, q, 0.d0)
+        yield = fluid_sputtering_yield(this%yield, T_e * K_BOLTZ/EL_CHG, q, 60.d0)
       case default
         call wrong_interaction_type(trim(this%type))
       end select
@@ -1942,7 +1930,7 @@ subroutine particle_projection_diagnostic(this, sim, particle, E, sputtering_yie
   !> find in which patch the particle is lost
   i_patch = elm_in_patch(particle%i_elm, this%fluid_yield_integral)
   if (i_patch < 0) then
-    write(*,"(A,I8,5es15.5)") "ERROR: in particle_self_reflection elm_in_patch, particle lost to somewhere unknown i_elm,s,t,R,Z,phi",particle%i_elm,particle%st,particle%x
+    ! particle lost from an edge element not covered by any wall patch — silently discard
     return
   end if
 
@@ -1992,8 +1980,10 @@ subroutine particle_projection_diagnostic(this, sim, particle, E, sputtering_yie
   ! 1 <-> 4 and 2 <-> 3, so 5-i
   do k=1,4
     if (i_edge_nodes(5-k) .gt. size(this%wall_projection%patch(i_patch)%xyz(1,:))) then
+      !$omp master
       write(*,*) "ERROR indexing problem in mod_wall_actioning",k,i_edge_elm,toroidal_offset, i_edge_nodes(5-k), size(this%wall_projection%patch(i_patch)%xyz(1,:))
       write(*,*) "ERROR temporary fix: set i_edge_nodes(5-k) = 1"
+      !$omp end master
       i_edge_nodes(5-k) = 1
     end if
 
@@ -2017,28 +2007,24 @@ subroutine particle_projection_diagnostic(this, sim, particle, E, sputtering_yie
   !associate (sc => this%wall_projection%patch(i_patch)%scalars) ! associate is nice to make more readable but cannot be used in OMP before version 4.5 (so not in OneAPI's OMP)
   do k=1,4
     ! particle flux
-    ! (weight/n_period since we are only looking at the flux of one 1/n_period wedge)
     !$omp atomic
     this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),1) = &
-    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),1) + (particle%weight/n_period) * area(k)/sum(area)**2
+    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),1) + particle%weight * area(k)/sum(area)**2
     
     ! particle heat flux on edge elements (including sheath potential)
-    ! (weight/n_period since we are only looking at the flux of one 1/n_period wedge)
     !$omp atomic
     this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),2) = &
-    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),2) + (particle%weight/n_period) * E * EL_CHG * area(k)/sum(area)**2
+    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),2) + particle%weight * E * EL_CHG * area(k)/sum(area)**2
     
     ! particle flux from prompt redeposition (i.e. from particles younger than 2 pi / omega_c)
-    ! (weight/n_period since we are only looking at the flux of one 1/n_period wedge)
     !$omp atomic
     this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),3) = &
-    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),3) + (particle%weight/n_period) * is_prompt_loss * area(k)/sum(area)**2
+    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),3) + particle%weight * is_prompt_loss * area(k)/sum(area)**2
     
     ! sputtering yield
-    ! (weight/n_period since we are only looking at the flux of one 1/n_period wedge)
     !$omp atomic
     this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),4) = &
-    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),4) + (particle%weight/n_period) * sputtering_yield * area(k)/sum(area)**2
+    this%wall_projection%patch(i_patch)%scalars(i_edge_nodes(k),4) + particle%weight * sputtering_yield * area(k)/sum(area)**2
     
   end do
   !end associate
