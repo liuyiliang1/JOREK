@@ -53,6 +53,10 @@ def plot(s1, s2, r, z, phi, psi, iprt, iplane, clength=None):
     s2.set_xlabel(r"$\psi_n$")
     s2.set_ylabel("Toroidal angle [rad]")
     s2.set_ylim(0,2*np.pi)
+    # Auto-adapt psi range to data
+    psi_min, psi_max = np.nanmin(psi), np.nanmax(psi)
+    psi_margin = 0.05 * (psi_max - psi_min)
+    s2.set_xlim(psi_min - psi_margin, psi_max + psi_margin)
 
     
     if clength is not None:

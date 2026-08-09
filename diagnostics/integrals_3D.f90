@@ -49,13 +49,13 @@ real*8  :: beta_p, beta_n, beta_t, aminor
 real*8  :: xjac, BigR, wst, P_int, C_intern, zj0, ps0, r0, T0, Te0, Vol, Volume, Area, Bgeo, psi_limit
 real*8  :: r0_corr, T0_corr
 
-real*8  :: current_in, current_out, D_int, D_ext, P_ext, C_ext, P_max, delta_phi, phi, P_tot, D_tot
+real*8  :: current_in, current_out, D_int, D_ext, P_ext, C_ext, delta_phi, phi, P_tot, D_tot
 real*8  :: VP_int, VP_ext,TVP_int, TVP_ext, VK_int, VK_ext, vpar0, BB2, VP_tot, TVP_tot, VK_tot
 real*8  :: kin_perp_in, kin_perp_out, kin_perp_tot
 real*8  :: VM_int, VM_ext, VM_tot, mag_in, mag_out, mag_tot, J2_int, J2_ext, J2_tot, ohm_in, ohm_tot, ohm_out
 real*8  :: H_int, H_ext, S_int, S_ext, heating_in, heating_out, source_in, source_out
 real*8  :: dTdx, dTdy, drhodx, drhody, dPdx, dPdy, dpsidx, dpsidy, dudx, dudy
-real*8  :: grad_psi, grad_P, grad_P_psi, gradP_psi_max, gradP_max
+real*8  :: grad_psi, grad_P, grad_P_psi
 real*8  :: source_volume, source_pellet, eta_T_ohm
 real*8  :: local_pellet_particles, local_plasma_particles, local_pellet_volume
 real*8  :: local_n_particles_inj, local_n_particles, source_neutral, source_neutral_drift, rn0, rho_bar
@@ -127,9 +127,7 @@ Bgeo = F0 / R_geo
 
 delta_phi = 2.d0 * PI / float(n_plane) / float(n_period)
 
-P_max         = 0.d0
-gradP_max     = 0.d0
-gradP_psi_max = 0.d0
+
 
 psi_limit = ES%psi_bnd
 
@@ -163,8 +161,8 @@ varmin(:) = 1.d50; varmax(:) = -1.d50; varminout(:) = 1.d50; varmaxout(:) = -1.d
 !$omp   private(ife,iv,inode,element,i,j, k,in, mp, ms, mt, spi_i,i_inj,                 &
 !$omp           x_g, y_g, x_s, y_s, x_t, y_t, xjac, eq_g, eq_s, eq_t, eq_p,                    &
 !$omp           wst, BigR, r0, T0, Te0, zj0, ps0, dTdx, dTdy, drhodx, drhody, dpsidx, dpsidy, dudx, dudy,  &
-!$omp           dpdx, dpdy, grad_P, grad_psi, grad_P_psi,gradP_max, gradP_psi_max, phi,        &
-!$omp           P_max, source_pellet, source_volume, eq_zne, eq_zTe, vpar0, BB2, eta_T_ohm,    &
+!$omp           dpdx, dpdy, grad_P, grad_psi, grad_P_psi, phi,                                 &
+!$omp           source_pellet, source_volume, eq_zne, eq_zTe, vpar0, BB2, eta_T_ohm,          &
 !$omp           heat_source, heat_source_i, heat_source_e, particle_source, rotation_source,   &
 !$omp           dn_dpsi,dn_dz,dn_dpsi2,dn_dz2,dn_dpsi_dz,dn_dpsi3,dn_dpsi_dz2, dn_dpsi2_dz,    &
 !$omp           dT_dpsi,dT_dz,dT_dpsi2,dT_dz2,dT_dpsi_dz,dT_dpsi3,dT_dpsi_dz2, dT_dpsi2_dz,    &
@@ -362,11 +360,6 @@ do ife = ife_min, ife_max
         VK_tot = VK_tot + r0 * (dudx**2 + dudy**2) * BigR**2 * xjac * BigR * wst * delta_phi
         VM_tot = VM_tot + (dpsidx**2+dpsidy**2)/BigR**2 * xjac * BigR * wst * delta_phi
         J2_tot = J2_tot + eta_T_ohm * (ZJ0/BigR)**2 * xjac * BigR * wst * delta_phi
-
-        P_max = max(P_max,r0 * T0)
-
-        gradP_max     = max(gradP_max,grad_P)
-        gradP_psi_max = max(gradP_psi_max,grad_P_psi)
 
         if (use_pellet) then
 

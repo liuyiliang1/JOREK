@@ -124,11 +124,12 @@ do i=1,element_list%n_elements   ! --- loop over elements
       enddo
 
       xjac = R_s * Z_t - R_t * Z_s
+      if (abs(xjac) < 1.d-15) cycle
       ps_x = (  ps_s * Z_t - ps_t * Z_s)/ xjac
       ps_y = (- ps_s * R_t + ps_t * R_s)/ xjac
 
       grad_psi(i,ms,mt) = sqrt(ps_x*ps_x + ps_y*ps_y)
-      
+
       ! --- include points if they are within the search region
       include_pt(i,ms,mt) = sqrt( (R-R0)**2.d0 + (Z-Z0)**2.d0 ) < search_radius
           
