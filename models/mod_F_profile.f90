@@ -44,6 +44,21 @@ subroutine F_profile(xpoint2,xcase2,Z,Z_xpoint,psi,psi_axis,psi_bnd,&
   ! --- Just to save the analytical formulation, just in case, never know...
   logical, parameter :: force_analytical = .false.
 
+  if (FRC_simulation) then
+    F_prof      = 0.d0
+    dF_dpsi     = 0.d0
+    dF_dz       = 0.d0
+    dF_dpsi2    = 0.d0
+    dF_dz2      = 0.d0
+    dF_dpsi_dz  = 0.d0
+    FFprime_prof= 0.d0
+    dFF_dpsi    = 0.d0
+    dFF_dz      = 0.d0
+    dFF_dpsi2   = 0.d0
+    dFF_dz2     = 0.d0
+    dFF_dpsi_dz = 0.d0
+    return
+  end if
   ! --- psi_norm
   psi_n = (psi - psi_axis)/(psi_bnd - psi_axis)
   delta_psi = (psi_bnd - psi_axis)
@@ -312,7 +327,7 @@ end subroutine F_profile
 ! --- This routine integrates the FFprime numerically.
 subroutine integrate_F_profile()
 
-  use phys_module, only: xpoint, F0, FF_0, FF_1, FF_coef, n_Fprofile_internal, Fprofile_internal, Fprofile_psi_max, num_ffprime
+  use phys_module, only: xpoint, F0, FF_0, FF_1, FF_coef, n_Fprofile_internal, Fprofile_internal, Fprofile_psi_max, num_ffprime,FRC_simulation
 
   implicit none
   
@@ -332,7 +347,10 @@ subroutine integrate_F_profile()
   Z_xpoint_fake = 0.d0
   psi_axis_fake = 0.d0
   psi_bnd_fake  = 1.d0
-
+  if(FRC_simulation) then
+    Fprofile_internal(:) = 0.d0
+    return
+  end if
   if ( (FF_coef(9) .ne. 1.d0) .and. (.not. num_ffprime) ) then
     write(*,*)'Full-MHD Warning!!! You have to use a denormalised edge perturbation for your'
     write(*,*)'                    FFprime, or use a numerical FFprime !!!'
@@ -504,7 +522,7 @@ end subroutine integrate_F_profile
 ! --- This routine checks that the numerically integrated F-profile is coherent with the input FFprime
 subroutine check_F_profile_accuracy()
 
-  use phys_module, only: n_Fprofile_internal, Fprofile_internal, Fprofile_psi_max, Fprofile_tolerance
+  use phys_module, only: n_Fprofile_internal, Fprofile_internal, Fprofile_psi_max, Fprofile_tolerance,FRC_simulation
 
   implicit none
 
@@ -515,6 +533,8 @@ subroutine check_F_profile_accuracy()
   real*8  :: Z_fake, Z_xpoint_fake(2)
   real*8  :: psi_axis_fake, psi_bnd_fake
   real*8  :: accumulated_error, accumulated_profile, diff_average_percent
+  
+  if (FRC_simulation) return
 
   Z_fake        = 0.d0
   Z_xpoint_fake = 0.d0

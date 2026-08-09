@@ -5,7 +5,7 @@ implicit none
 
 logical, parameter :: with_vpar       = .true.
 logical, parameter :: with_TiTe       = .false.
-logical, parameter :: with_neutrals   = .false. 
+logical, parameter :: with_neutrals   = .true. 
 logical, parameter :: with_impurities = .false.
 logical, parameter :: with_refluid    = .false. ! not yet possible to switch
 
@@ -204,6 +204,7 @@ character*36, dimension(n_terms_Te),    parameter :: Te_term_names=  &
                                                  'Te_Eq__aux_energy_source      '/)   ! 20: 
 
 
+
 character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                               (/ 'vpar_Eq__B.grad_P               ', &  !  1:
                                                  'vpar_Eq__ext_particle_source    ', &  !  2: 
@@ -217,7 +218,7 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'vpar_Eq__neoclassical_term      ', &  ! 10:
                                                  'vpar_Eq__aux_particle_source    ', &  ! 11:
                                                  'vpar_Eq__aux_par_momentum_source', &  ! 12:
-                                                 'vpar_Eq__inward_pinch           '/)   ! 13: 
+                                                 'vpar_Eq__inward_pinch           '/)   ! 13:
 
  character*36, dimension(n_terms_rhon), parameter :: rhon_term_names=  &
                                               (/ 'rhon_Eq__neutral_diffusion', &  !  1:

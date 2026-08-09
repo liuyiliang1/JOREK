@@ -1,7 +1,6 @@
 !> this module contains the functionality related to performing physics on particles that needs to happen each particle step
 !> the main functionality is all contained in evolve_particle_group, so below for more explanation
 module mod_particle_evolution
-    use mod_model_settings
     use particle_tracer
     use phys_module, only: CENTRAL_MASS, CENTRAL_DENSITY
     use phys_module, only: use_manual_random_seed, n_aux_var, part_kill_ratio, proj_collection_period
@@ -13,6 +12,8 @@ module mod_particle_evolution
     use mod_basisfunctions
     use mod_particle_types, only: copy_particle_kinetic_leapfrog
     use mod_sampling, only: boxmueller_transform,sample_chi_squared_3
+    use mod_sheath
+    use mod_edge_elements
     use mod_coordinate_transforms, only: vector_cartesian_to_cylindrical
     !$ use omp_lib
 
@@ -25,14 +26,14 @@ contains
   !> - performs coupling scheme specific physics (e.g. ionisation, radiation... etc)
   !> - creates the feedback rhs required for projections of kinetic variables
   !> - evolves the location and velocity of the particles based on the background plasma (pushing)
-  subroutine evolve_particle_group(sim, group_num, jorek_feedback, rng, tstep_part_adj, nstep_part_adj)
+  subroutine evolve_particle_group(sim, group_num, jorek_feedback, rng, tstep_part_adj, nstep_part_adj,edge_elm_template)
     use mod_project_particles
     use mod_random_seed
     use mod_interp, only: mode_moivre
     use mod_basisfunctions
     use mod_particle_types, only: copy_particle_kinetic_leapfrog
     use mod_sampling, only: boxmueller_transform,sample_chi_squared_3
-
+    
     implicit none
     class(particle_sim), target, intent(inout)                :: sim
     integer, intent(in)                                       :: group_num
@@ -41,6 +42,7 @@ contains
     type(pcg32_rng), dimension(:), allocatable, intent(inout) :: rng
     real*8,  intent(in)                                       :: tstep_part_adj
     integer, intent(in)                                       :: nstep_part_adj
+    type(edge_elements), optional, intent(in)                 :: edge_elm_template   !if use_sheath is true, pass edge elements
     
     real*8,allocatable :: feedback_rhs(:,:,:,:,:)
     type (type_node_list),         pointer :: feedback_nodelist
@@ -75,9 +77,9 @@ contains
 
     select case (part_group%coupling_scheme)
       case ('ncs')
-        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj)
+        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj,nstep_part_adj,edge_elm_template=edge_elm_template)
       case ('ics')
-        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx)
+        call evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj,imp_q_idx, edge_elm_template)
       case ('rep')
         call evolve_REs(sim, group_num, feedback_rhs, rng, tstep_part_adj, nstep_part_adj)
       case ('epf')
@@ -93,24 +95,20 @@ contains
       ! To get rates in the feedback, we need to divide the change by the time. Since we keep adding changes each evolve_particle_group call until 
       ! the rhs is reset to 0 when the jorek_feedback is projected (each fluid tstep), we should divide by sim%tstep_fluid_si
       jorek_feedback%rhs(:,:,:,:,mom_par_idx_kin) = jorek_feedback%rhs(:,:,:,:,mom_par_idx_kin) + feedback_rhs(:,:,:,:,mom_par_idx_kin) / sim%tstep_fluid_si
-#ifdef WITH_TiTe
-      jorek_feedback%rhs(:,:,:,:,E_Te_idx_kin)    = jorek_feedback%rhs(:,:,:,:,E_Te_idx_kin)    + feedback_rhs(:,:,:,:,E_Te_idx_kin)    / sim%tstep_fluid_si
-      jorek_feedback%rhs(:,:,:,:,E_Ti_idx_kin)    = jorek_feedback%rhs(:,:,:,:,E_Ti_idx_kin)    + feedback_rhs(:,:,:,:,E_Ti_idx_kin)    / sim%tstep_fluid_si
-#else
       jorek_feedback%rhs(:,:,:,:,E_idx_kin)       = jorek_feedback%rhs(:,:,:,:,E_idx_kin)       + feedback_rhs(:,:,:,:,E_idx_kin)       / sim%tstep_fluid_si
-#endif
+
       !> ncs specific projections
       if (part_group%coupling_scheme == 'ncs') then
         jorek_feedback%rhs(:,:,:,:,rho_idx_kin)   = jorek_feedback%rhs(:,:,:,:,rho_idx_kin)     + feedback_rhs(:,:,:,:,rho_idx_kin)     / sim%tstep_fluid_si
         ! for the density, we should divide by the amount of times we will double count the same particle (=the number of particle steps in a fluid step)
-        jorek_feedback%rhs(:,:,:,:,6)             = jorek_feedback%rhs(:,:,:,:,6)               + feedback_rhs(:,:,:,:,6)               / (sim%tstep_fluid_si/tstep_part_adj) !< extra diagnostic projection (density) 
+        jorek_feedback%rhs(:,:,:,:,5)             = jorek_feedback%rhs(:,:,:,:,5)               + feedback_rhs(:,:,:,:,5)               / (sim%tstep_fluid_si/tstep_part_adj) !< extra diagnostic projection (density) 
       endif
 
       !> ics specific projections
       if (part_group%coupling_scheme == 'ics') then
         jorek_feedback%rhs(:,:,:,:,imp_q_idx)     = jorek_feedback%rhs(:,:,:,:,imp_q_idx)       + feedback_rhs(:,:,:,:,imp_q_idx)       / (sim%tstep_fluid_si/tstep_part_adj)
-        jorek_feedback%rhs(:,:,:,:,7)             = jorek_feedback%rhs(:,:,:,:,7)               + feedback_rhs(:,:,:,:,7)               / sim%tstep_fluid_si                  !< extra projection (impurity radiated power)
-        jorek_feedback%rhs(:,:,:,:,8)             = jorek_feedback%rhs(:,:,:,:,8)               + feedback_rhs(:,:,:,:,8)               / (sim%tstep_fluid_si/tstep_part_adj) !< extra projection (impurity density)
+        jorek_feedback%rhs(:,:,:,:,6)             = jorek_feedback%rhs(:,:,:,:,6)               + feedback_rhs(:,:,:,:,6)               / sim%tstep_fluid_si                  !< extra projection (impurity radiated power)
+        jorek_feedback%rhs(:,:,:,:,7)             = jorek_feedback%rhs(:,:,:,:,7)               + feedback_rhs(:,:,:,:,7)               / (sim%tstep_fluid_si/tstep_part_adj) !< extra projection (impurity density)
       endif
     endif
 
@@ -254,7 +252,7 @@ contains
   !> The two coupling schemes are handled by the same function due to large degree of overlap in the physics 
   !> experienced by neutrals and impurities. 
   !> The pushing of the particle is also done here
-  subroutine evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx)
+  subroutine evolve_ncs_ics(sim, group_num, feedback_rhs, feedback_nodelist, feedback_element_list, rng, tstep_part_adj, nstep_part_adj, imp_q_idx,edge_elm_template)
     use mod_collisions
     use mod_ionisation_recombination
 
@@ -268,6 +266,7 @@ contains
     real*8,                            intent(in)             :: tstep_part_adj
     integer,                           intent(in)             :: nstep_part_adj
     integer, optional,                 intent(in)             :: imp_q_idx
+    type(edge_elements), optional,     intent(in)             :: edge_elm_template   !if use_sheath is true, pass edge elements
 
 
     real*8, parameter  :: H_binding_energy = 2.18d-18
@@ -279,14 +278,12 @@ contains
 
     !> Coupling --------------------------------------
     real*8    :: density_source, mom_par_source, energy_source
-    real*8    :: energy_source_Te, energy_source_Ti
-    real*8    :: density_fb, mom_par_fb, E_fb, imp_q_fb, imp_density_fb, imp_P_rad_fb, extra_proj, imp_P_line_rad_fb
-    real*8    :: E_fb_Te, E_fb_Ti
-    real*8    :: v_old(3), v_new(3), T_eV, B_norm(3)
+    real*8    :: density_fb, mom_par_fb, E_fb, imp_q_fb, imp_density_fb, imp_P_rad_fb, extra_proj 
+    real*8    :: v_old(3), v_new(3), T_eV
     real*8    :: vvector(3), ran_norm(4)
 
     logical   :: limits, limits_coll
-    real*8    :: T_e_raw, T_i_raw,  n_e_raw
+    real*8    :: n_e_raw, T_e_raw
     real*8    :: ionize_rate, ionize_energy, ionize_source, ionize_prob
     real*8    :: cx_rate, cx_energy,  cx_source, cx_prob
     real*8    :: PLT, PRB, Srec, line_rad_energy
@@ -302,12 +299,15 @@ contains
     real*8, dimension(1) :: P, P_s, P_t, P_phi, P_time
     real*8    :: delta_E_kin
 
+    !> sheath related
+    real*8    :: E_sheath(3)
+
     !> System variables ------------------------------
     type(particle_kinetic_leapfrog) :: particle_tmp
 
     real*8    :: n_norm, rho_norm, t_norm, v_norm, E_norm, M_norm
-    real*8    :: t, E(3), B(3), psi, U, n_i, n_e, T_e, T_i, grad_T_i(3), rz_old(2), st_old(2)
-    real*8    :: R_g, Z_g, R_s, R_t, Z_s, Z_t, xjac, R, Z
+    real*8    :: t, E(3), B(3), psi, U,n_i, n_e, T_e, grad_T_e(3), rz_old(2), st_old(2)
+    real*8    :: Z_g, R_s, R_t, Z_s, Z_t, xjac, R, Z
     real*8    :: HZ(n_tor), HH(4,4), HH_s(4,4), HH_t(4,4)
 
     integer   :: i, j, k, l, m, n, i_elm_old, i_elm, q_old 
@@ -340,26 +340,21 @@ contains
 #endif
     !$omp schedule(runtime)                                                                               &
     !$omp shared(sim, group_num, nstep_part_adj, tstep_part_adj, rng,                                    &
-    !$omp rho_norm, t_norm, v_norm, E_norm, M_norm, N_norm, part_kill_ratio,                              &    
-    !$omp rho_idx_kin, mom_par_idx_kin,                                                                   &
-#ifdef WITH_TiTe
-    !$omp E_Te_idx_kin, E_Ti_idx_kin,                                                                     &
-#else
-    !$omp E_idx_kin,                                                                                      &
-#endif
-    !$omp imp_q_idx, ics_indices_kin,                                                                     &
-    !$omp CENTRAL_DENSITY, CENTRAL_MASS, feedback_nodelist, feedback_element_list)                        &
+    !$omp rho_norm, t_norm, v_norm, E_norm, M_norm, N_norm,                                               &    
+    !$omp rho_idx_kin, mom_par_idx_kin, E_idx_kin, imp_q_idx, ics_indices_kin,                            &
+    !$omp edge_elm_template,                                                                              &
+    !$omp CENTRAL_DENSITY, CENTRAL_MASS, part_kill_ratio, feedback_nodelist, feedback_element_list)       &
     !$omp private(particle_tmp, i_rng, i, j, k, l, m, t, E, B, psi, U, rz_old, st_old,                    &
-    !$omp i_elm_old, i_elm, n_i, n_e, T_e, T_i, imp_charge_density, PLT, PRB, Srec, q_old,                &
+    !$omp i_elm_old, i_elm, n_i, n_e, T_e,imp_charge_density, PLT, PRB, Srec, grad_T_e, q_old,            &
     !$omp ionize_rate, ionize_prob, ionize_ran, ionize_ran_imp, ionize_source, ionize_energy,             &
-    !$omp cx_rate, cx_prob, cx_source, cx_energy, cx_ran, grad_T_i,                                       &
+    !$omp cx_rate, cx_prob, cx_source, cx_energy, cx_ran,                                                 &
     !$omp kinetic_energy, line_rad_energy, radiation_energy, binding_energy,                              &  
-    !$omp R_s, R_t, Z_g, Z_s, Z_t, R, Z, xjac, HH, HH_s, HH_t, HZ, ifail,                                 &
+    !$omp R_s, R_t, Z_g, Z_s, Z_t, R, Z, xjac, HH, HH_s, HH_t, HZ, ifail,E_sheath,                        &
     !$omp density_fb, E_fb, mom_par_fb,extra_proj, imp_q_fb, imp_density_fb, imp_P_rad_fb,                &
-    !$omp density_source, mom_par_source, energy_source, v_old, v_new, T_eV, imp_P_line_rad_fb,           &
-    !$omp m_b, kTb,coulomb_log ,n_b,v_b, ran, ran2, q_b, q, E_fb_Te, E_fb_Ti,                             &
-    !$omp P, P_s, P_t, P_phi, P_time, limits, limits_coll, energy_source_Te, energy_source_Ti,            &
-    !$omp vvector, ran_norm, imp_q_idx_temp, T_e_raw, T_i_raw, n_e_raw, delta_E_kin, i_tor, n)            &
+    !$omp density_source, mom_par_source, energy_source, v_old, v_new, T_eV,                              &
+    !$omp m_b, kTb,coulomb_log ,n_b,v_b, ran, ran2, q_b, q,                                               &
+    !$omp P, P_s, P_t, P_phi, P_time, limits, limits_coll, delta_E_kin,                                   &
+    !$omp vvector, ran_norm, imp_q_idx_temp, n_e_raw, T_e_raw, i_tor, n)                                  &
     !$omp reduction(+:feedback_rhs,n_lost_ion,p_lost_plt,p_lost_cx,p_lost_ion,n_super_ionized)
     do j=1,size(sim%groups(group_num)%particles,1)
       particle_tmp = sim%groups(group_num)%particles(j)
@@ -389,17 +384,8 @@ contains
 
         v_new = v_old
         
-        !> calculate ion density and electron temperature (jorek model assumption: n_e = n_i)     
-#ifdef WITH_TiTe
-          call sim%fields%calc_NeTeTi(t, particle_tmp%i_elm, particle_tmp%st, particle_tmp%x(3),n_e=n_i, T_e=T_e, T_i=T_i, n_e_raw=n_e_raw, &
-                            T_e_raw=T_e_raw, T_i_raw=T_i_raw, grad_T_i=grad_T_i)
-          limits = (n_e_raw .le. 1e14) .or. (T_e_raw * K_BOLTZ / EL_CHG .le. 1.d0) .or. (T_i_raw * K_BOLTZ / EL_CHG .le. 1.d0) !ADAS limits
-          limits_coll = T_i_raw * K_BOLTZ / EL_CHG < 0.d0 !< limits for collisions
-#else
-          call sim%fields%calc_NeTeTi(t, particle_tmp%i_elm, particle_tmp%st, particle_tmp%x(3), n_e=n_i, T_e=T_e, n_e_raw=n_e_raw, T_e_raw=T_e_raw, grad_T_e=grad_T_i)
-          limits = (n_e_raw .le. 1e14) .or. (T_e_raw * K_BOLTZ / EL_CHG .le. 1.d0)
-          limits_coll = T_e_raw * K_BOLTZ / EL_CHG < 0.d0 !< limits for collisions
-#endif
+        !> calculate ion density and electron temperature (jorek model assumption: n_e = n_i)
+        call sim%fields%calc_NeTe(t, particle_tmp%i_elm, particle_tmp%st, particle_tmp%x(3), n_i, T_e, n_e_raw, T_e_raw, grad_T_e)
 
         !> loop over impurities groups and calculate their contribution to electron density
         imp_charge_density = 0.d0
@@ -413,6 +399,8 @@ contains
         
         !> adjust n_e based on impurity charge
         n_e = n_i + max(0.d0, imp_charge_density)
+        
+        limits = n_e_raw .le. 1e14 .or. T_e_raw * K_BOLTZ / EL_CHG .le. 10.d0 !ADAS limits
         
         !> check that particle weight is non negative
         if (particle_tmp%weight .lt. 0.0d0) write(*,*) "Negative particle weight p(j)%w=", particle_tmp%weight
@@ -454,11 +442,11 @@ contains
               particle_tmp%weight = particle_tmp%weight * (1.d0 - ionize_prob)
             endif 
     
-            kinetic_energy = dot_product(v_old,v_old) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT / 2.d0
+            kinetic_energy = dot_product(v_old,v_old) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT /2.d0
             ionize_energy     = kinetic_energy - H_binding_energy
             !<including binding energy will make ionize_energy negative, so it becomes a sink for the plasma
           endif ! IONISATION
-          
+            
           !> CHARGE EXCHANGE
           ! It is assumed that we will have a exchange between hydrogen isotopes
           if (sim%groups(group_num)%use_kin_cx  .and. .not. limits .and. particle_tmp%weight .gt. 0.d0) then !< CX uses adas as well. Te limit could be lower.
@@ -467,17 +455,11 @@ contains
     
             call rng(i_rng)%next(cx_ran)
             if (cx_ran(1) .le. CX_prob) then
-              ! sample boltzman, randomize velocity
-  
               !> ----- NEW CX PARTICLE ---------
               !Box-Mueller sample velocities with st.dev=1
               ran_norm = boxmueller_transform(cx_ran(2:5))
-              !> v_new = sqrt(kT/m) * ran_norm
-#ifdef WITH_TiTe
-              v_new = sqrt(T_i * K_BOLTZ/(sim%groups(group_num)%mass * ATOMIC_MASS_UNIT))*ran_norm(2:4)
-#else
+              !>v_new = sqrt(kT/m) * ran_norm
               v_new = sqrt(T_e * K_BOLTZ/(sim%groups(group_num)%mass * ATOMIC_MASS_UNIT))*ran_norm(2:4)
-#endif
               !>add bulk fluid flow
               v_new = v_new + vvector 
 
@@ -504,17 +486,12 @@ contains
           density_source = ionize_source * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT !< mass source in SI
           mom_par_source = ionize_source * dot_product(B, v_old) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT & 
                 + CX_source  * dot_product(B, v_old - v_new) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT 
-#ifdef WITH_TiTe
-          energy_source_Te = -ionize_source * H_binding_energy - line_rad_energy
-          energy_source_Ti = ionize_source * kinetic_energy + delta_E_kin
-#else
           energy_source  = ionize_source * ionize_energy + delta_E_kin - line_rad_energy
-#endif
+                  
           n_lost_ion = n_lost_ion + ionize_source	!< local sum #particles lost due to ionisation
           p_lost_ion = p_lost_ion + ionize_source * ionize_energy
           p_lost_plt = p_lost_plt + line_rad_energy
           p_lost_cx  = p_lost_cx + cx_source * cx_energy
-
 
           !> Calculate the projection of the ion source in real-time
           call basisfunctions(particle_tmp%st(1), particle_tmp%st(2), HH, HH_s, HH_t)
@@ -523,26 +500,16 @@ contains
           do l=1,n_vertex_max
             do m=1,n_order+1
   
-              density_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * density_source   * t_norm / rho_norm
-              mom_par_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * mom_par_source   * t_norm / m_norm
-#ifdef WITH_TiTe
-              E_fb_Te    = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source_Te * t_norm / E_norm
-              E_fb_Ti    = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source_Ti * t_norm / E_norm
-#else
-              E_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source    * t_norm / E_norm
-#endif
+              density_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * density_source      * t_norm / rho_norm
+              mom_par_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * mom_par_source      * t_norm / m_norm
+              E_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source       * t_norm / E_norm
               extra_proj = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight
   
               do i_tor=1,n_tor
-                feedback_rhs(m,l,i_elm_old,i_tor,rho_idx_kin)     = feedback_rhs(m,l,i_elm_old,i_tor,rho_idx_kin)  + HZ(i_tor) * density_fb
-#ifdef WITH_TiTe
-                feedback_rhs(m,l,i_elm_old,i_tor,E_Te_idx_kin)    = feedback_rhs(m,l,i_elm_old,i_tor,E_Te_idx_kin) + HZ(i_tor) * E_fb_Te
-                feedback_rhs(m,l,i_elm_old,i_tor,E_Ti_idx_kin)    = feedback_rhs(m,l,i_elm_old,i_tor,E_Ti_idx_kin) + HZ(i_tor) * E_fb_Ti
-#else
-                feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       = feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)    + HZ(i_tor) * E_fb
-#endif
+                feedback_rhs(m,l,i_elm_old,i_tor,rho_idx_kin)     = feedback_rhs(m,l,i_elm_old,i_tor,rho_idx_kin)     + HZ(i_tor) * density_fb
+                feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       = feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       + HZ(i_tor) * E_fb
                 feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) = feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) + HZ(i_tor) * mom_par_fb
-                feedback_rhs(m,l,i_elm_old,i_tor,6)               = feedback_rhs(m,l,i_elm_old,i_tor,6) + HZ(i_tor) * extra_proj
+                feedback_rhs(m,l,i_elm_old,i_tor,5)               = feedback_rhs(m,l,i_elm_old,i_tor,5)               + HZ(i_tor) * extra_proj
               enddo
             enddo
           enddo
@@ -552,8 +519,8 @@ contains
         ! ============================================ ICS SPECIFIC PHYSICS ===========================================
 
         if (sim%groups(group_num)%coupling_scheme == 'ics') then
-          line_rad_energy = 0.d0
-          delta_E_kin = 0.d0
+          limits_coll = T_e_raw * K_BOLTZ / EL_CHG < 0.d0 !< limits for collisions [eV]
+
           !> IONISATION & RECOMBINATION (Impurities)
           if (sim%groups(group_num)%use_kin_ionisation .and. .not. limits) then
             call rng(i_rng)%next(ionize_ran_imp)
@@ -581,21 +548,16 @@ contains
           if (sim%groups(group_num)%use_kin_bg_collisions .and. .not. limits_coll) then
             if (particle_tmp%q .gt. 0) then
               ! Calculate collisions
-#ifdef WITH_TiTe
-              kTb = T_i*K_BOLTZ
-#else
               kTb = T_e*K_BOLTZ ! assume T_e == T_i
-#endif
               n_b = n_i
-              ! Assumes deuterium background
               q_b = 1
               m_b = central_mass
 
               if (sim%groups(group_num)%kin_bg_coll_type .eq. 'Homma2013') then
                 !> Homma use temperature in [J] (kb [j/K]* T_e [K] or e [J/eV] * Te_eV [eV])
-                q = q_homma2013(kTb, grad_T_i*K_BOLTZ, B, n_b, m_b, q_b)
+                q = q_homma2013(kTb, grad_T_e*K_BOLTZ, B, n_b, m_b, q_b)
               elseif (sim%groups(group_num)%kin_bg_coll_type .eq. 'Homma2020') then
-                q = q_homma2020(kTb, grad_T_i*K_BOLTZ, B, n_b, m_b, q_b, sim%groups(group_num)%homma2020_alpha)
+                q = q_homma2020(kTb, grad_T_e*K_BOLTZ, B, n_b, m_b, q_b, sim%groups(group_num)%homma2020_alpha)
               endif
 
               !> Calculate coulomb logarithm and limit it to reasonable values
@@ -612,7 +574,7 @@ contains
               end do
 
               call sample_velocity_dist_magnetized(n_coll, ran2(1:6,:), kTb, q, n_b, m_b, q_b, P(1)*B/sim%t_norm, v_b)
-  
+
               do l=1,n_coll
                 call rng(i_rng)%next(ran)
                 call collide_particles(ran(1:3), particle_tmp%q, sim%groups(group_num)%mass, v_new, &
@@ -621,7 +583,7 @@ contains
             end if
           endif ! COLLISIONS
           
-          !> Kinetic energy change transferred to plasma fluid this substep
+          !> kinetic energy change transferred to plasma fluid this substep
           delta_E_kin = 0.5d0 * particle_tmp%weight * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT &
                         * (dot_product(v_old, v_old) - dot_product(v_new, v_new))
 
@@ -635,16 +597,17 @@ contains
             CYCLE !< don't feed this particle into the feedback
           endif
       
+          !> CALCULATE THE SHEATH ELECTRON FIELD
+          if(sim%groups(group_num)%use_sheath)then
+            call calc_E_sheath(feedback_nodelist, feedback_element_list,edge_elm_template,particle_tmp%i_elm,particle_tmp%x,particle_tmp%st,kTb/EL_CHG,kTb/EL_CHG,B,n_b,E_sheath)
+            E=E + E_sheath
+          end if
+
           !> ----- CONSTRUCT FEEDBACK -----
           !> the feedback per particle per time step is accumulated which is then divided by gather time later
-#ifdef WITH_TiTe
-          energy_source_Te = ionize_energy + radiation_energy
-          energy_source_Ti = delta_E_kin
-#else
-          energy_source    = ionize_energy + radiation_energy + delta_E_kin
-#endif
-          mom_par_source   = particle_tmp%weight * dot_product(B, (v_old - v_new)) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT ! parallel momentum given to plasma
-
+          energy_source  = ionize_energy + radiation_energy + delta_E_kin
+          mom_par_source = particle_tmp%weight * dot_product(B, (v_old - v_new)) * sim%groups(group_num)%mass * ATOMIC_MASS_UNIT ! parallel momentum given to plasma
+ 
           n_lost_ion = n_lost_ion
           p_lost_ion = p_lost_ion + ionize_energy
           p_lost_plt = p_lost_plt + radiation_energy
@@ -657,27 +620,18 @@ contains
           do l=1,n_vertex_max
             do m=1,n_order+1
   
-              mom_par_fb     = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * mom_par_source    * t_norm / m_norm
-#ifdef WITH_TiTe
-              E_fb_Te        = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source_Te  * t_norm / E_norm
-              E_fb_Ti        = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source_Ti  * t_norm / E_norm
-#else
-              E_fb           = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source     * t_norm / E_norm
-#endif
-              imp_q_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight * particle_tmp%q
+              mom_par_fb     = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * mom_par_source                        * t_norm / m_norm
+              E_fb           = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * energy_source                         * t_norm / E_norm
+              imp_q_fb       = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight * particle_tmp%q 
               imp_density_fb = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * particle_tmp%weight
               imp_P_rad_fb   = HH(l,m) * sim%fields%element_list%element(i_elm_old)%size(l,m) * radiation_energy / tstep_part_adj
+              
               do i_tor=1,n_tor
-#ifdef WITH_TiTe
-                feedback_rhs(m,l,i_elm_old,i_tor,E_Te_idx_kin)    = feedback_rhs(m,l,i_elm_old,i_tor,E_Te_idx_kin)    + HZ(i_tor) * E_fb_Te
-                feedback_rhs(m,l,i_elm_old,i_tor,E_Ti_idx_kin)    = feedback_rhs(m,l,i_elm_old,i_tor,E_Ti_idx_kin)    + HZ(i_tor) * E_fb_Ti
-#else
                 feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       = feedback_rhs(m,l,i_elm_old,i_tor,E_idx_kin)       + HZ(i_tor) * E_fb
-#endif
                 feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) = feedback_rhs(m,l,i_elm_old,i_tor,mom_par_idx_kin) + HZ(i_tor) * mom_par_fb
                 feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       = feedback_rhs(m,l,i_elm_old,i_tor,imp_q_idx)       + HZ(i_tor) * imp_q_fb       ! impurity charge density
-                feedback_rhs(m,l,i_elm_old,i_tor,7)               = feedback_rhs(m,l,i_elm_old,i_tor,7)               + HZ(i_tor) * imp_P_rad_fb   ! impurity radiated power [to be moved to diag feedback]
-                feedback_rhs(m,l,i_elm_old,i_tor,8)               = feedback_rhs(m,l,i_elm_old,i_tor,8)               + HZ(i_tor) * imp_density_fb ! impurity density [to be moved to diag feedback]
+                feedback_rhs(m,l,i_elm_old,i_tor,6)               = feedback_rhs(m,l,i_elm_old,i_tor,6)               + HZ(i_tor) * imp_P_rad_fb   ! impurity radiated power [to be moved to diag feedback]
+                feedback_rhs(m,l,i_elm_old,i_tor,7)               = feedback_rhs(m,l,i_elm_old,i_tor,7)               + HZ(i_tor) * imp_density_fb ! impurity density [to be moved to diag feedback]
               enddo
             enddo
           enddo

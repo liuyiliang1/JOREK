@@ -786,7 +786,7 @@ subroutine preset_parameters
   energy_teleported = 0.d0 
   constant_imp_source = 0.d0
 
-  L_tube = 0. ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
+  L_tube = 0.d0 ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
 
   !====== JET DMV-2 parameters
   !L_tube = 2.4d0
@@ -923,6 +923,7 @@ part_group_configs(:)%use_kin_bg_collisions  = .false.
 part_group_configs(:)%kin_bg_coll_type       = 'Homma2020'
 part_group_configs(:)%homma2020_alpha        = 1.5d0
 part_group_configs(:)%ics_group_idx          = -1
+part_group_configs(:)%use_sheath             = .false.
 
 !----- specific to rep 
 part_group_configs(:)%num_re                 = 0.d0
@@ -1002,4 +1003,5 @@ manual_seed = 498932990          !< chosen arbitarily
 use_fixed_rng_value = .false.
 fixed_rng_value = 0.5
 
+FRC_simulation = .false.
 end subroutine preset_parameters

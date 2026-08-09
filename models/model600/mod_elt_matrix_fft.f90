@@ -5346,7 +5346,7 @@ subroutine construct_imp_charge_states()
 
   if (allocated(imp_adas(1)%ionisation_energy)) then
 
-     call imp_cor(1)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
+     call imp_cor(1)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
           p_out=P_imp,p_Te_out=dP_imp_dT,z_avg=Z_imp,z_avg_Te=dZ_imp_dT,                     &
           z_avg_TeTe=d2Z_imp_dT2)
 
@@ -5370,7 +5370,7 @@ subroutine construct_imp_charge_states()
 
   else
 
-     call imp_cor(1)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
+     call imp_cor(1)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
           p_out=P_imp,p_Te_out=dP_imp_dT,                                                    &
           z_avg=Z_imp,z_avg_Te=dZ_imp_dT,z_avg_TeTe=d2Z_imp_dT2)
 

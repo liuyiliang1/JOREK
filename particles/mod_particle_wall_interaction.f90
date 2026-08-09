@@ -53,7 +53,7 @@ module mod_particle_wall_interaction
   use mod_io_actions, only: io_action
   use mod_sampling
   use mod_particle_types
-  use mod_eckstein_y_ye
+  use mod_eckstein_thompson
   use constants
   use mod_rng, only: type_rng, setup_shared_rngs
   use mod_boundary, only: wall_normal_vector
@@ -90,7 +90,7 @@ module mod_particle_wall_interaction
     type(eckstein_sputtered_energy_coeff) :: energy !< eckstein coefficients for determining energy of the resulting particle
     type(thompson_dist)                   :: E_dist = thompson_dist(E_b = 8.7d0, n=2) !< produces energies in eV (value for W default)
     logical :: use_thompson = .false. !< Use a thompson distribution for the energy of sputtered particles
-    logical :: use_Yn_func  = .false. !< Use Ecksteins interpolating functions instead of interpolating manually
+    logical :: use_Yn_func  = .true. !< Use Ecksteins interpolating functions instead of interpolating manually
     
     class(type_rng), dimension(:), allocatable :: rng !< one RNG per openmp thread
 
@@ -872,7 +872,7 @@ subroutine load_eckstein_data(this, sim)
   this%yield%use_Yn_func = this%use_Yn_func
 
   ! reading the yield data
-  call this%yield%read()
+  call this%yield%initialise(Z_origin,Z_target)
 
   if (.not. this%use_thompson) then ! use eckstein coefficients
     ! setting the energy object
@@ -881,7 +881,7 @@ subroutine load_eckstein_data(this, sim)
     this%energy%use_Yn_func = this%use_Yn_func
 
     !reading the energy data
-    call this%energy%read()
+    call this%energy%initialise(Z_origin,Z_target)
   end if
 end subroutine load_eckstein_data
 
@@ -1445,8 +1445,13 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
     !> determine new energy
     if (fast_reflection) then
       ! still some energy and momentum can be lost at the reflection against the wall, this is modelled using another set of eckstein coefficients
-      energy_coeff = this%energy%interp(E,theta)
-      E = energy_coeff * E
+
+      !energy_coeff = this%energy%interp(E,theta)
+      !E = energy_coeff * E
+
+      !use thompson distribution for reflected particles
+      call ThompsonEne(E, this%energy%E_threshold,rng, E)
+      
 
       ! since we have wall_flux_in, and wall_flux_in = wall_flux_refl + wall_flux_therm, we also know wall_flux_thermal. Similarly we know wall_heat_thermal
       diagnostics(i_wall_flux_refl)   = diagnostics(i_wall_flux_refl) + particle%weight
@@ -1474,23 +1479,24 @@ subroutine single_self_interaction(this, sim, particle, rng, diagnostics, E_in, 
     call particle_projection_diagnostic(this, sim, particle, E, yield)
 
     !> determining the energy of the particle post sputtering
-    if (this%use_thompson) then
-      call rng%next(u)
-      ! Option below to remove the highest 2% of the distribution by clipping u (hacky)
-      ! u = min(u, 0.98d0)
-      E = sample_dist(this%E_dist, u(1))
-    else
-      !> avoiding numerical issues with E being too small to calculate energy_coeff
-      if (E < this%energy%E_threshold + 1d0) then
-        !$omp critical
-        write(*,*) "WARNING: E too small for yields",E,this%energy%E_threshold,"setting E to just above threshold, please expand coefficients range"
-        !$omp end critical
-        E = this%energy%E_threshold + 1d0
-      end if
+    ! if (this%use_thompson) then
+    !   call rng%next(u)
+    !   ! Option below to remove the highest 2% of the distribution by clipping u (hacky)
+    !   ! u = min(u, 0.98d0)
+    !   E = sample_dist(this%E_dist, u(1))
+    ! else
+    !   !> avoiding numerical issues with E being too small to calculate energy_coeff
+    !   if (E < this%energy%E_threshold + 1d0) then
+    !     !$omp critical
+    !     write(*,*) "WARNING: E too small for yields",E,this%energy%E_threshold,"setting E to just above threshold, please expand coefficients range"
+    !     !$omp end critical
+    !     E = this%energy%E_threshold + 1d0
+    !   end if
 
-      energy_coeff = this%energy%interp(E,theta)
-      E = energy_coeff * E
-    end if
+    !   energy_coeff = this%energy%interp(E,theta)
+    !   E = energy_coeff * E
+    ! end if
+    call ThompsonEne(E, this%energy%E_threshold,rng, E)
 
   case default
     write(*,*) "ERROR: unknown single_self_interaction type",local_type
@@ -1777,7 +1783,7 @@ subroutine project_sputter_vars_on_edge(this, sim)
       case("wall recomb")
         yield = 1.d0 !<assuming complete wall saturation
       case("fluid sputter")
-        yield = fluid_sputtering_yield(this%yield, T_e * K_BOLTZ/EL_CHG, q, 0.d0)
+        yield = fluid_sputtering_yield(this%yield, T_e * K_BOLTZ/EL_CHG, q, 60.d0)
       case default
         call wrong_interaction_type(trim(this%type))
       end select

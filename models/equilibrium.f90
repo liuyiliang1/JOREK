@@ -164,7 +164,7 @@ if (my_id == 0) then
       if (abs(ES%psi_xpoint(1)-ES%psi_xpoint(2)) .ge. SDN_threshold) then
         ! --- Project psi to enforce up/down symmetry
         call Poisson(0,0,node_list,element_list,bnd_node_list,bnd_elm_list, var_psi,var_psi,1, &
-                     0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+                     0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
         call update_equil_state(my_id,node_list, element_list, bnd_elm_list, xpoint, xcase)
       end if
     end if
@@ -768,3 +768,159 @@ equil_initialized = .true.
 
 return
 end subroutine equilibrium
+
+subroutine read_eqdsk_equil(my_id, node_list, element_list, bnd_node_list, bnd_elm_list, xpoint, xcase)
+  !-----------------------------------------------------------------------
+  ! This routine reads an equilibrium from an EQDSK file, and fills in the 
+  ! node_list and element_list structures with the psi values and their derivatives.
+  ! It also updates the equilibrium state (ES) with the magnetic axis location,
+  ! sets ES%psi_bnd = 0 (as requested), and marks the equilibrium as initialized.
+  !-----------------------------------------------------------------------
+  use tr_module 
+  use mod_parameters
+  use data_structure
+  use phys_module, only: eqdsk_psi_fact
+  use mod_model_settings
+  use mod_eqdsk_tools
+  use mod_interp
+  use equil_info
+  use mpi_mod
+  implicit none
+
+  ! --- Routine parameters
+  integer,                      intent(in)    :: my_id
+  type(type_node_list),         intent(inout) :: node_list
+  type(type_element_list),      intent(inout) :: element_list
+  type(type_bnd_node_list),     intent(inout) :: bnd_node_list
+  type(type_bnd_element_list),  intent(inout) :: bnd_elm_list
+  logical,                      intent(in)    :: xpoint
+  integer,                      intent(in)    :: xcase
+
+  ! --- Local variables
+  integer          :: nR_eqdsk, nZ_eqdsk, ier, i, k
+  real*8, allocatable :: R_eqdsk(:), Z_eqdsk(:), psi_eqdsk(:,:)
+  logical          :: normal_eqdsk, normal_eqdsk_wall
+  integer          :: n_wall_tmp
+  real*8, allocatable :: R_wall_tmp(:), Z_wall_tmp(:)
+  real*8           :: psi, psi_R, psi_Z
+  real*8           :: R_axis, Z_axis, psi_axis, s_axis, t_axis
+  integer          :: i_elm_axis, ifail_axis
+  real*8           :: dummy
+
+  if (my_id == 0) then
+    write(*,*) '***************************************'
+    write(*,*) '*         read_eqdsk_equil            *'
+    write(*,*) '***************************************'
+  endif
+
+  ! --- 1. Read EQDSK file -------------------------------------------------
+  call get_eqdsk_style(normal_eqdsk, normal_eqdsk_wall, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot open EQDSK file'
+    stop
+  endif
+
+  call get_eqdsk_dimensions(normal_eqdsk, nR_eqdsk, nZ_eqdsk, n_wall_tmp, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot get EQDSK dimensions'
+    stop
+  endif
+
+  allocate(R_eqdsk(nR_eqdsk), Z_eqdsk(nZ_eqdsk), psi_eqdsk(nR_eqdsk, nZ_eqdsk))
+  allocate(R_wall_tmp(n_wall_tmp), Z_wall_tmp(n_wall_tmp))
+
+  call get_data_from_eqdsk(normal_eqdsk, normal_eqdsk_wall, &
+       nR_eqdsk, nZ_eqdsk, R_eqdsk, Z_eqdsk, psi_eqdsk, &
+       n_wall_tmp, R_wall_tmp, Z_wall_tmp, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot read EQDSK data'
+    stop
+  endif
+
+  ! --- We do not need the wall data, so deallocate temporary arrays
+  deallocate(R_wall_tmp, Z_wall_tmp)
+
+  ! --- 2. Interpolate psi and its derivatives onto the computational grid ----
+  do i = 1, node_list%n_nodes
+    ! Get node coordinates
+    call interpolate_psi_from_eqdsk_grid( &
+         nR_eqdsk, nZ_eqdsk, R_eqdsk, Z_eqdsk, psi_eqdsk, &
+         node_list%node(i)%x(1,1,1), node_list%node(i)%x(1,1,2), &
+         psi, psi_R, psi_Z)
+
+    ! Store psi value
+    node_list%node(i)%values(1,1,var_psi) = psi
+
+    ! Project psi_R, psi_Z onto the element's direction vectors
+    ! (these vectors are already defined in the grid generation)
+    node_list%node(i)%values(1,2,var_psi) = &
+         psi_R * node_list%node(i)%x(1,2,1) + &
+         psi_Z * node_list%node(i)%x(1,2,2)
+    node_list%node(i)%values(1,3,var_psi) = &
+         psi_R * node_list%node(i)%x(1,3,1) + &
+         psi_Z * node_list%node(i)%x(1,3,2)
+    node_list%node(i)%values(1,4,var_psi) = &
+         psi_R * node_list%node(i)%x(1,4,1) + &
+         psi_Z * node_list%node(i)%x(1,4,2)
+  enddo
+
+  ! --- 3. Find magnetic axis -----------------------------------------------
+  call find_axis(my_id, node_list, element_list, &
+       psi_axis, R_axis, Z_axis, i_elm_axis, s_axis, t_axis, ifail_axis)
+
+  if (ifail_axis /= 0) then
+    write(*,*) 'WARNING in read_eqdsk_equil: find_axis failed, using geometric center as fallback.'
+    ! Fallback: use R_geo, Z_geo from phys_module
+    R_axis = R_geo
+    Z_axis = Z_geo
+    ! Estimate psi_axis by interpolation at that point
+    call interpolate_psi_from_eqdsk_grid( &
+         nR_eqdsk, nZ_eqdsk, R_eqdsk, Z_eqdsk, psi_eqdsk, &
+         R_axis, Z_axis, psi_axis, dummy, dummy)
+    i_elm_axis = 1   ! dummy
+    s_axis = 0.5d0   ! dummy
+    t_axis = 0.5d0   ! dummy
+  endif
+
+  ! --- 4. Update equilibrium state (ES) ------------------------------------
+  ! Magnetic axis
+  ES%R_axis      = R_axis
+  ES%Z_axis      = Z_axis
+  ES%psi_axis    = psi_axis
+  ES%i_elm_axis  = i_elm_axis
+  ES%s_axis      = s_axis
+  ES%t_axis      = t_axis
+  ES%ifail_axis  = ifail_axis
+
+  ! Set boundary psi to 0 as required
+  ES%psi_bnd = 0.d0
+
+  ! Plasma type (limiter or X-point) from input arguments
+  ES%limiter_plasma = .not. xpoint
+  ES%xpoint         = xpoint
+  ES%xcase          = xcase
+  if (xpoint) then
+    ES%active_xpoint = 0   ! not yet known, set to 0
+    ES%R_xpoint(:)   = 0.d0
+    ES%Z_xpoint(:)   = 0.d0
+    ES%psi_xpoint(:) = 0.d0
+  endif
+
+  ! Determine whether psi_axis is a minimum
+  ! We temporarily mark ES as initialized so that is_axis_psi_minimum uses the stored values
+  ES%initialized = .true.
+  call is_axis_psi_mininum(node_list, element_list, bnd_elm_list)
+
+  ! Mark equilibrium as fully initialized
+  ES%initialized = .true.
+
+  ! --- 5. Clean up ---------------------------------------------------------
+  deallocate(R_eqdsk, Z_eqdsk, psi_eqdsk)
+
+  if (my_id == 0) then
+    write(*,*) 'EQDSK equilibrium read successfully.'
+    write(*,'(A,3f12.6)') ' Magnetic axis: R, Z, psi = ', R_axis, Z_axis, psi_axis
+    write(*,'(A,f12.6)') ' Boundary psi (set to 0) = ', ES%psi_bnd
+  endif
+
+end subroutine read_eqdsk_equil
