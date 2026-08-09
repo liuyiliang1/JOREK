@@ -444,7 +444,7 @@ module pellet_module
             case('Ar')
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if
@@ -465,14 +465,14 @@ module pellet_module
             case('Ne')
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if
               mu_imp             = central_mass/20. ! Neon mass = 20 u and main ion mass = central_mass u
               beta_imp           = mu_imp*Z_imp - 1.
               ne_SI              = n_SI + beta_imp * n_imp_SI
-  
+
               if (ne_SI<0.) ne_SI = 0.
               ! The scaling law is in gauss unit
               ! The sublimation energy for Ne is 0.02 eV
@@ -481,6 +481,25 @@ module pellet_module
                                        * ((ne_SI*1.d-6)**0.45) * (T_eV**1.72)         &
                                        * (0.02**(-0.16)) * (20.**(-0.28))             &
                                        * (10.**(-0.56)) * ((2./3.)**0.28)
+              else if (pellets(i_p)%spi_species == 0.) then
+                pellets(i_p)%spi_abl = 3.9d14 * ((pellets(i_p)%spi_radius*1.d2)**1.455) &
+                                       * ((ne_SI*1.d-6)**0.455) * (T_eV**1.679)
+              end if
+            case('B')
+              if (T_eV >= 1.) then
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+              else
+                Z_imp = 0.
+              end if
+              mu_imp             = central_mass/11. ! Boron mass = 11 u
+              beta_imp           = mu_imp*Z_imp - 1.
+              ne_SI              = n_SI + beta_imp * n_imp_SI
+              if (ne_SI<0.) ne_SI = 0.
+              ! Boron and D2 always formed separately
+              if (pellets(i_p)%spi_species == 1.) then
+                pellets(i_p)%spi_abl = 3.9d14 * ((pellets(i_p)%spi_radius*1.d2)**1.455) &
+                                       * ((ne_SI*1.d-6)**0.455) * (T_eV**1.679) &
+                                       * (11./2.)**(-0.333)
               else if (pellets(i_p)%spi_species == 0.) then
                 pellets(i_p)%spi_abl = 3.9d14 * ((pellets(i_p)%spi_radius*1.d2)**1.455) &
                                        * ((ne_SI*1.d-6)**0.455) * (T_eV**1.679)
@@ -530,28 +549,45 @@ module pellet_module
             case('Ne')  ! Neond and H2/D2 mixed together
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if
               mu_imp             = central_mass/20. ! Neon mass = 20 u and main ion mass = central_mass u
               beta_imp           = mu_imp*Z_imp - 1.
               ne_SI              = n_SI + beta_imp * n_imp_SI
-  
+
               if (ne_SI<0.) ne_SI = 0.
               ! The scaling law is in gauss unit
               ! The sublimation energy for Ne is 0.02 eV
                 pellets(i_p)%spi_abl = (27.0837 + TAN(1.48709*(1.-pellets(i_p)%spi_species)/(1.+pellets(i_p)%spi_species))) &
                                        * MOLE_NUMBER * ((pellets(i_p)%spi_radius*1.d2 / 0.2)**(4./3.)) &
                                        * ((ne_SI*1.d-20)**(1./3.)) * ((T_eV/2.d3)**(5./3.)) &
-                                       / (20.183*pellets(i_p)%spi_species + 2.0141*(1.-pellets(i_p)%spi_species)) 
+                                       / (20.183*pellets(i_p)%spi_species + 2.0141*(1.-pellets(i_p)%spi_species))
+            case('B')  ! Boron and D2 formed separately (like Argon)
+              if (T_eV >= 1.) then
+                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+              else
+                Z_imp = 0.
+              end if
+              mu_imp             = central_mass/11. ! Boron mass = 11 u
+              beta_imp           = mu_imp*Z_imp - 1.
+              ne_SI              = n_SI + beta_imp * n_imp_SI
+              if (ne_SI<0.) ne_SI = 0.
+              if (pellets(i_p)%spi_species == 1.) then
+                pellets(i_p)%spi_abl = 36.6337 * MOLE_NUMBER * ((pellets(i_p)%spi_radius*1.d2 / 0.2)**(4./3.)) &
+                                       * ((ne_SI*1.d-20)**(1./3.)) * ((T_eV/2.d3)**(5./3.)) / 11.
+              else if (pellets(i_p)%spi_species == 0.) then
+                pellets(i_p)%spi_abl = 39.0023 * 2. * MOLE_NUMBER * ((pellets(i_p)%spi_radius*1.d2 / 0.2)**(4./3.)) &
+                                       * ((ne_SI*1.d-20)**(1./3.)) * ((T_eV/2.d3)**(5./3.)) / 4.0282
+              end if
             case default
               write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown !!'
               write(*,*) '=> We assume the gas is D2.'
               pellets(i_p)%spi_abl = 39.0023 * 2. * MOLE_NUMBER * ((pellets(i_p)%spi_radius*1.d2 / 0.2)**(4./3.)) &
                                      * ((n_SI*1.d-20)**(1./3.)) * ((T_eV/2.d3)**(5./3.)) / 4.0282
           end select
-  
+
           B0 = abs(F0 / R_geo)
           nu = 0.843
           if (B0 > 2. .and. spi_abl_mag_reduction) pellets(i_p)%spi_abl = pellets(i_p)%spi_abl * (2./B0)**nu
@@ -783,6 +819,21 @@ module pellet_module
           end if
         case('Ar')
           ! Argon and D2/H2 part of the pellet are always formed seperately, thus we always treat them as such.
+          do i = 1, n_spi
+            i_p = i - 1 + n_spi_begin
+            if (i <= int(real(n_spi,8)*(mix_ratio))) then
+              pellets(i_p)%spi_species = 1.
+              spi_density_tmp = pellet_density
+              real_spi_quantity(2) = real_spi_quantity(2) + (4./3.) * PI * (shard_size(i)**3) * spi_density_tmp *1.d20
+            else
+              pellets(i_p)%spi_species = 0.
+              spi_density_tmp = pellet_density_bg
+              real_spi_quantity(1) = real_spi_quantity(1) + (4./3.) * PI * (shard_size(i)**3) * spi_density_tmp *1.d20
+            end if
+            N_shard_norm = N_shard_norm + (4./3.) * PI * (shard_size(i)**3) * spi_density_tmp *1.d20
+          end do
+        case('B')
+          ! Boron and D2 formed separately (same treatment as Argon)
           do i = 1, n_spi
             i_p = i - 1 + n_spi_begin
             if (i <= int(real(n_spi,8)*(mix_ratio))) then
@@ -1218,6 +1269,24 @@ module pellet_module
               real_spi_quantity(1) = real_spi_quantity(1) + (4./3.) * PI * (spi_radius_tmp(i)**3) * spi_density_tmp *1.d20
             else
               write(*,*) "ERROR in pellet_module: Argon and D2/H2 part of the pellet are always formed separately, exiting."
+              stop
+            end if
+          end do
+        case('B')
+          ! Boron and D2 formed separately (same treatment as Argon)
+          do i = 1, n_spi
+            i_p = i - 1 + n_spi_begin
+            spi_species_atomic_tmp = 1.d0 - 2.d0 * spi_species_molar_D2_tmp(i) / (spi_species_molar_D2_tmp(i) + 1.d0)
+            if (spi_species_atomic_tmp == 1.) then
+              pellets(i_p)%spi_species = spi_species_atomic_tmp
+              spi_density_tmp = pellet_density
+              real_spi_quantity(2) = real_spi_quantity(2) + (4./3.) * PI * (spi_radius_tmp(i)**3) * spi_density_tmp *1.d20
+            else if (spi_species_atomic_tmp == 0.) then
+              pellets(i_p)%spi_species = spi_species_atomic_tmp
+              spi_density_tmp = pellet_density_bg
+              real_spi_quantity(1) = real_spi_quantity(1) + (4./3.) * PI * (spi_radius_tmp(i)**3) * spi_density_tmp *1.d20
+            else
+              write(*,*) "ERROR in pellet_module: Boron and D2 part of the pellet are always formed separately, exiting."
               stop
             end if
           end do

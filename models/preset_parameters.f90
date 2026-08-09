@@ -292,6 +292,7 @@ subroutine preset_parameters
 
   eta_num            = 0.d0
   visco_num          = 0.d0
+  visco_sol                = 0.d0; visco_sol_tanh_psin     = 1.d0; visco_sol_tanh_sig     = 5.d-2
   visco_par_num      = 0.d0
   D_perp_num         = 0.d0
   D_perp_num_tanh    = 0.d0; D_perp_num_tanh_psin    = 3.d-1; D_perp_num_tanh_sig    = 1.d-1
@@ -731,7 +732,16 @@ subroutine preset_parameters
   neo_file ='none'
   amu_neo_const = 0.
   aki_neo_const = 0.
-  
+
+! ===== Seed island parameters ======
+  num_seed_islands = 0
+  seed_psin = 0.d0
+  seed_n_tor = 0
+  seed_width = 0.02d0
+  seed_m_pol = 0
+  seed_q = 0.d0
+  seed_continuous = .false.
+
 
   n_limiter = 0
   R_limiter = 0.d0
@@ -786,7 +796,11 @@ subroutine preset_parameters
   energy_teleported = 0.d0 
   constant_imp_source = 0.d0
 
-  L_tube = 0. ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
+  slave_impurity     = .false.              ! Slaved impurity to plasma density
+  slave_impurity_conc = 0.d0                ! Number density ratio c = n_imp / n_e
+  slave_impurity_omega = 1.d4               ! Relaxation frequency for slaved impurity [1/JOREK-time]
+
+  L_tube = 0.d0 ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
 
   !====== JET DMV-2 parameters
   !L_tube = 2.4d0
@@ -923,6 +937,8 @@ part_group_configs(:)%use_kin_bg_collisions  = .false.
 part_group_configs(:)%kin_bg_coll_type       = 'Homma2020'
 part_group_configs(:)%homma2020_alpha        = 1.5d0
 part_group_configs(:)%ics_group_idx          = -1
+part_group_configs(:)%use_sheath             = .false.
+part_group_configs(:)%ics_concentration      = 0.d0
 
 !----- specific to rep 
 part_group_configs(:)%num_re                 = 0.d0

@@ -310,9 +310,12 @@ module phys_module
   real*8  :: heatsource_gauss_i_psin(5)    !< Position around which ions Gaussian source is located
   real*8  :: heatsource_gauss_i_sig(5)     !< Width over which ions Gaussian source extends
   real*8  :: constant_imp_source           !< Adds a constant impurity source
-  
+  real*8  :: slave_impurity_conc           !< Fixed number-density concentration c = n_imp / n_e
+  real*8  :: slave_impurity_omega          !< Relaxation frequency for slaved impurity [1/JOREK-time]
+
   !> @name Hyper-resistivity, -viscosity and -diffusivities
   real*8  :: eta_num, visco_num, visco_par_num,                                      &
+             visco_sol, visco_sol_tanh_psin, visco_sol_tanh_sig,                      &
              D_perp_num, D_perp_num_tanh, D_perp_num_tanh_psin, D_perp_num_tanh_sig, &
              ZK_perp_num, ZK_i_perp_num, ZK_e_perp_num,                              &
              ZK_perp_num_tanh, ZK_perp_num_tanh_psin, ZK_perp_num_tanh_sig,          &
@@ -821,6 +824,18 @@ module phys_module
   real*8              :: aki_neo_const    !< if ( (NEO) .and. (neo_file=='none')), this constant value is used for aki_neo
   real*8              :: amu_neo_const    !< if ( (NEO) .and. (neo_file=='none')), this constant value is used for amu_neo
 
+  !> @name Seed island parameters for NTM studies
+  integer, parameter :: max_seed_islands = 10                       !< Max number of seed islands
+  integer :: num_seed_islands = 0                                   !< Number of seed islands (0 = no seed)
+  real*8  :: seed_psin(max_seed_islands) = 0.d0                     !< Normalized flux location of rational surface
+  integer :: seed_n_tor(max_seed_islands) = 0                       !< Toroidal mode number n for each seed
+  real*8  :: seed_width(max_seed_islands) = 0.02d0                  !< Radial Gaussian width in psi_n
+  integer :: seed_m_pol(max_seed_islands) = 0                       !< Poloidal mode number m (0=auto from q*n)
+  real*8  :: seed_q(max_seed_islands) = 0.d0                         !< q value at rational surface (>0 replaces seed_psin)
+  logical :: seed_continuous = .false.                                !< .true.=continuous injection; .false.=one-time
+  integer :: seed_inject_step = 0                                     !< internal: step counter for temporal envelope
+  integer :: seed_ramp_steps = 10                                      !< number of steps to ramp up psiseed (avoid non-convergence)
+
   !> @name RMP profiles
   logical :: output_bnd_elements !< If .true., writes bnd nodes and bnd elements in files 'boundary_nodes.dat' and 'boundary_elements.dat'
   logical :: RMP_on              !< Activates RMPs on boundary if .true. (the old version without STARWALL)
@@ -905,8 +920,9 @@ module phys_module
   real*8              :: tgnum_AZ    
   real*8              :: tgnum_A3    
 
-  !> @name Flag to determine whether or not we keep current source term  
+  !> @name Flag to determine whether or not we keep current source term
   logical             :: keep_current_prof !< Artificial current source to approximately keep the initial current profile, i.e., \f$\eta(j-j0)\f$?
+  logical             :: slave_impurity    !< Slave impurity density to plasma density via fixed number-density concentration c = n_imp / n_e
   logical             :: init_current_prof !< Initialize the current source from the current profile present
   logical             :: current_prof_initialized !< Flag that is automatically set to true once the current source has been initialized to prevent accidental reinitialization when restarting
   
@@ -985,6 +1001,14 @@ module phys_module
   logical :: init_particles_only  !< only initialise particles, and produce part_restart files, do not run the simulation (only relevant when restart_particles=.f.)
   integer :: find_RZ_nearby_iter  !< the maximum newton iterations used in find_RZ_nearby 
   real*8  :: find_RZ_nearby_tol   !< the squared element tolerance used in find_RZ_nearby for finding a position inside an element (unit: element size)
+
+  real*8  :: puff_rate        !< physical atoms/sec puffed (shared over 2 places)
+  real*8  :: r_valve          !< radius of poloidal circular source
+  real*8  :: R_valve_loc      !< R position valve 1
+  real*8  :: Z_valve          !< Z position valve 1
+  real*8  :: R_valve_loc2     !< R position valve 2
+  real*8  :: Z_valve2         !< Z position valve 2
+  integer :: n_puff           !< superparticles used per puffing action per valve
 
   ! -----------------------------------------------
   ! --- Structures for particle valves 
@@ -1098,6 +1122,8 @@ module phys_module
     integer             :: ics_group_idx           !< internal index given to this specific impurities group, used to obtain the variable index of charge density
                                                    !< projectons specific to this group, as we require a charge density projection for each impurities group for coupling
                                              
+    logical             :: use_sheath              !< switch on sheath boundary conditions for this impurities group
+    real*8              :: ics_concentration = 0.d0 !< impurity concentration for density-proportional initialization (0 = use puffing mode)
 
     !> --------------- puffing ----------------------
 

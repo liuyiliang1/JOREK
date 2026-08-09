@@ -9,7 +9,7 @@ module equil_info
   
   
   
-  use constants,          only: PI, LOWER_XPOINT, UPPER_XPOINT, DOUBLE_NULL,SYMMETRIC_XPOINT
+  use constants,          only: PI, LOWER_XPOINT, UPPER_XPOINT, DOUBLE_NULL, QUAD_XPOINT, SYMMETRIC_XPOINT
   use data_structure,     only: type_node_list, type_element_list, type_bnd_element_list
   use gauss
   use basis_at_gaussian,  only: H, H_s, H_t, n_degrees
@@ -61,7 +61,7 @@ module equil_info
     logical          :: xpoint                   !< Is this an X-point case? Not necessarily active!
     integer          :: xcase                    !< Upper/lower/double X-point?
     integer          :: active_xpoint            !< Which X-point is active?
-    real*8           :: R_xpoint(2)              !< R coordinate of X-point(s).
+    real*8           :: R_xpoint(2)              !< R coordinate of X-point(s). (1)=lower, (2)=upper (main X-points)
     real*8           :: Z_xpoint(2)              !< Z coordinate of X-point(s).
     real*8           :: Z_xpoint_init(2)         !< Z coordinate of X-point(s) in GS-equilibrium at t=0.
     real*8           :: Psi_xpoint(2)            !< Poloidal flux value of X-point(s).
@@ -70,7 +70,15 @@ module equil_info
     real*8           :: t_xpoint(2)              !< t coordinate of X-point within element.
     integer          :: ifail_xpoint             !< Error code for X-point determination.
     logical          :: xpoint_init = .false.    !< Has the find_xpoint routine been called in update_equil_state?
-    logical          :: far_axis_xpoint(2)       !< Is the the X-point far enough from axis? 
+    logical          :: far_axis_xpoint(2)       !< Is the the X-point far enough from axis?
+    ! --- Secondary X-points (for QUAD_XPOINT=4: leg region X-points)
+    real*8           :: R_xpoint_sec(2)          !< (1)=lower secondary, (2)=upper secondary
+    real*8           :: Z_xpoint_sec(2)          !< Z coordinate of secondary X-points
+    real*8           :: Psi_xpoint_sec(2)        !< Poloidal flux at secondary X-points
+    integer          :: i_elm_xpoint_sec(2)      !< Element index of secondary X-points
+    real*8           :: s_xpoint_sec(2)          !< s coordinate of secondary X-points
+    real*8           :: t_xpoint_sec(2)          !< t coordinate of secondary X-points
+    logical          :: far_axis_xpoint_sec(2)   !< Is secondary X-point far enough from axis? 
     
     ! --- Boundary point (point defining the plasma LCFS, either the active limiter point or X-point)
     real*8           :: R_bnd                    !< R coordinate of boundary point.
@@ -189,12 +197,21 @@ module equil_info
     ES%xpoint       = xpoint
     ES%xcase        = xcase
     ES%ifail_xpoint = 0
-    ES%far_axis_xpoint(:) = .false. 
-    if ( xpoint ) then 
+    ES%far_axis_xpoint(:) = .false.
+    if ( xpoint ) then
       call find_xpoint(my_id_fake, node_list, element_list, ES%psi_xpoint, ES%R_xpoint,     &
         ES%Z_xpoint, ES%i_elm_xpoint, ES%s_xpoint, ES%t_xpoint, ES%xcase, ES%ifail_xpoint,ES%far_axis_xpoint)
 
       ES%xpoint_init = .true.
+    endif
+
+    ! --- For QUAD_XPOINT: also find secondary (leg) X-points
+    if ( xpoint .and. (ES%xcase .eq. QUAD_XPOINT) ) then
+      call find_xpoint_quad_sec(node_list, element_list, &
+        ES%psi_xpoint_sec, ES%R_xpoint_sec, ES%Z_xpoint_sec, &
+        ES%i_elm_xpoint_sec, ES%s_xpoint_sec, ES%t_xpoint_sec, &
+        ES%psi_xpoint, ES%R_xpoint, ES%Z_xpoint, &
+        ES%far_axis_xpoint_sec)
     endif
     
     ! --- Find the limiter point.
@@ -738,11 +755,207 @@ module equil_info
 
   return
   end subroutine find_xpoint
-  
-  
-  
 
+  !> Find secondary (leg) X-points for QUAD_XPOINT configuration.
+  !! Searches beyond the main X-points for additional nulls in |grad_psi|.
+  subroutine find_xpoint_quad_sec(node_list, element_list, &
+      psi_xpoint_sec, R_xpoint_sec, Z_xpoint_sec, &
+      i_elm_xpoint_sec, s_xpoint_sec, t_xpoint_sec, &
+      psi_xpoint_main, R_xpoint_main, Z_xpoint_main, &
+      far_axis_xpoint_sec)
 
+    use phys_module, only: R_geo, xpoint_search_tries
+
+    type(type_node_list),    intent(in)  :: node_list
+    type(type_element_list), intent(in)  :: element_list
+    real*8,                  intent(out) :: psi_xpoint_sec(2), R_xpoint_sec(2), Z_xpoint_sec(2)
+    integer,                 intent(out) :: i_elm_xpoint_sec(2)
+    real*8,                  intent(out) :: s_xpoint_sec(2), t_xpoint_sec(2)
+    real*8,                  intent(in)  :: psi_xpoint_main(2), R_xpoint_main(2), Z_xpoint_main(2)
+    logical,                 intent(out) :: far_axis_xpoint_sec(2)
+
+    real*8  :: ps_s, ps_t, ps_x, ps_y, xjac, P_st, P_ss, P_tt
+    real*8  :: R, R_s, R_t, Z, Z_s, Z_t
+    real*8  :: s, t, xerr, ferr, R_xp0, Z_xp0, r_margin
+    integer :: i, iv, ms, mt, kf, kv, i_tries, i_init, ifail
+    integer :: min_indices(3)
+    logical :: found_lower, found_upper
+    real*8  :: s_init(2), t_init(2)
+    integer :: i_elm_init(2)
+    real*8, allocatable :: grad_psi_arr(:,:,:)
+    logical, allocatable :: include_pt(:,:,:)
+
+    write(*,*) '*********************************'
+    write(*,*) '*  find_xpoint_quad_sec         *'
+    write(*,*) '*********************************'
+
+    r_margin = 0.015d0 * R_geo
+
+    psi_xpoint_sec = 0.d0; R_xpoint_sec = 0.d0; Z_xpoint_sec = 0.d0
+    s_xpoint_sec = 0.d0; t_xpoint_sec = 0.d0
+    i_elm_xpoint_sec = 0
+    far_axis_xpoint_sec = .false.
+    s_init = 0.d0; t_init = 0.d0; i_elm_init = 0
+
+    allocate(grad_psi_arr(element_list%n_elements, n_gauss, n_gauss))
+    allocate(include_pt(element_list%n_elements, n_gauss, n_gauss))
+    grad_psi_arr = 0.d0
+
+    ! --- Compute |grad psi| on all elements ---
+    do i = 1, element_list%n_elements
+      do ms = 1, n_gauss
+        do mt = 1, n_gauss
+          ps_s = 0.d0; ps_t = 0.d0
+          R_s = 0.d0; Z_s = 0.d0; R_t = 0.d0; Z_t = 0.d0
+          R = 0.d0; Z = 0.d0
+          do kf = 1, n_degrees
+            do kv = 1, 4
+              iv = element_list%element(i)%vertex(kv)
+              ps_s = ps_s + node_list%node(iv)%values(1,kf,1) * element_list%element(i)%size(kv,kf) * H_s(kv,kf,ms,mt)
+              ps_t = ps_t + node_list%node(iv)%values(1,kf,1) * element_list%element(i)%size(kv,kf) * H_t(kv,kf,ms,mt)
+              R = R + node_list%node(iv)%x(1,kf,1) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+              Z = Z + node_list%node(iv)%x(1,kf,2) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+              R_s = R_s + node_list%node(iv)%x(1,kf,1) * element_list%element(i)%size(kv,kf) * H_s(kv,kf,ms,mt)
+              Z_s = Z_s + node_list%node(iv)%x(1,kf,2) * element_list%element(i)%size(kv,kf) * H_s(kv,kf,ms,mt)
+              R_t = R_t + node_list%node(iv)%x(1,kf,1) * element_list%element(i)%size(kv,kf) * H_t(kv,kf,ms,mt)
+              Z_t = Z_t + node_list%node(iv)%x(1,kf,2) * element_list%element(i)%size(kv,kf) * H_t(kv,kf,ms,mt)
+            end do
+          end do
+          xjac = R_s * Z_t - R_t * Z_s
+          if (xjac .ne. 0.d0) then
+            ps_x = (ps_s * Z_t - ps_t * Z_s) / xjac
+            ps_y = (-ps_s * R_t + ps_t * R_s) / xjac
+            grad_psi_arr(i,ms,mt) = sqrt(ps_x*ps_x + ps_y*ps_y)
+          end if
+        end do
+      end do
+    end do
+
+    ! --- Lower secondary X-point (below lower main) ---
+    found_lower = .false.
+    include_pt = .false.
+    do i = 1, element_list%n_elements
+      do ms = 1, n_gauss
+        do mt = 1, n_gauss
+          R = 0.d0; Z = 0.d0
+          do kf = 1, n_degrees
+            do kv = 1, 4
+              iv = element_list%element(i)%vertex(kv)
+              R = R + node_list%node(iv)%x(1,kf,1) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+              Z = Z + node_list%node(iv)%x(1,kf,2) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+            end do
+          end do
+          if (Z .lt. Z_xpoint_main(1) .and. Z .gt. Z_xpoint_main(1) - 1.5d0) then
+            include_pt(i,ms,mt) = .true.
+          end if
+        end do
+      end do
+    end do
+
+    i_init = 0
+    do i_tries = 1, xpoint_search_tries
+      min_indices = minloc(grad_psi_arr, mask=include_pt)
+      if (.not. any(include_pt)) min_indices = 0
+      if (min_indices(1) == 0) then; found_lower = .false.; exit; end if
+      i_elm_xpoint_sec(1) = min_indices(1)
+      s = Xgauss(min_indices(2)); t = Xgauss(min_indices(3))
+      call mnewtax(node_list, element_list, i_elm_xpoint_sec(1), s, t, xerr, ferr, ifail)
+      if (ifail .ne. 0) include_pt(i_elm_xpoint_sec(1),:,:) = .false.
+      call interp_RZ(node_list, element_list, i_elm_xpoint_sec(1), s, t, R_xp0, R_s, R_t, Z_xp0, Z_s, Z_t)
+      if (sqrt((R_xpoint_main(1)-R_xp0)**2 + (Z_xpoint_main(1)-Z_xp0)**2) .lt. r_margin) then
+        include_pt(i_elm_xpoint_sec(1),:,:) = .false.
+      else if (include_pt(i_elm_xpoint_sec(1),1,1)) then
+        found_lower = .true.; s_xpoint_sec(1) = s; t_xpoint_sec(1) = t; exit
+      else if (i_init == 0) then
+        s_init(1) = s; t_init(1) = t; i_elm_init(1) = i_elm_xpoint_sec(1); i_init = 1
+      end if
+    end do
+
+    if (.not. found_lower .and. i_elm_init(1) .gt. 0) then
+      s_xpoint_sec(1) = s_init(1); t_xpoint_sec(1) = t_init(1)
+      i_elm_xpoint_sec(1) = i_elm_init(1)
+    end if
+
+    if (i_elm_xpoint_sec(1) .gt. 0) then
+      call interp(node_list, element_list, i_elm_xpoint_sec(1), 1, 1, s_xpoint_sec(1), t_xpoint_sec(1), &
+        psi_xpoint_sec(1), ps_s, ps_t, P_st, P_ss, P_tt)
+      call interp_RZ(node_list, element_list, i_elm_xpoint_sec(1), s_xpoint_sec(1), t_xpoint_sec(1), &
+        R_xpoint_sec(1), R_s, R_t, Z_xpoint_sec(1), Z_s, Z_t)
+      far_axis_xpoint_sec(1) = .true.
+      xjac = R_s * Z_t - R_t * Z_s
+      if (xjac .ne. 0.d0) then
+        ps_x = (ps_s * Z_t - ps_t * Z_s) / xjac
+        ps_y = (-ps_s * R_t + ps_t * R_s) / xjac
+        write(*,'(A,i6,4f14.8)') ' Lower secondary X-point : ', i_elm_xpoint_sec(1), &
+          R_xpoint_sec(1), Z_xpoint_sec(1), psi_xpoint_sec(1), sqrt(ps_x**2+ps_y**2)
+      end if
+    end if
+    if (.not. found_lower) write(*,*) 'WARNING: lower secondary X-point not properly found'
+
+    ! --- Upper secondary X-point (above upper main) ---
+    found_upper = .false.; include_pt = .false.
+    do i = 1, element_list%n_elements
+      do ms = 1, n_gauss
+        do mt = 1, n_gauss
+          R = 0.d0; Z = 0.d0
+          do kf = 1, n_degrees
+            do kv = 1, 4
+              iv = element_list%element(i)%vertex(kv)
+              R = R + node_list%node(iv)%x(1,kf,1) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+              Z = Z + node_list%node(iv)%x(1,kf,2) * element_list%element(i)%size(kv,kf) * H(kv,kf,ms,mt)
+            end do
+          end do
+          if (Z .gt. Z_xpoint_main(2) .and. Z .lt. Z_xpoint_main(2) + 1.5d0) then
+            include_pt(i,ms,mt) = .true.
+          end if
+        end do
+      end do
+    end do
+
+    i_init = 0
+    do i_tries = 1, xpoint_search_tries
+      min_indices = minloc(grad_psi_arr, mask=include_pt)
+      if (.not. any(include_pt)) min_indices = 0
+      if (min_indices(1) == 0) then; found_upper = .false.; exit; end if
+      i_elm_xpoint_sec(2) = min_indices(1)
+      s = Xgauss(min_indices(2)); t = Xgauss(min_indices(3))
+      call mnewtax(node_list, element_list, i_elm_xpoint_sec(2), s, t, xerr, ferr, ifail)
+      if (ifail .ne. 0) include_pt(i_elm_xpoint_sec(2),:,:) = .false.
+      call interp_RZ(node_list, element_list, i_elm_xpoint_sec(2), s, t, R_xp0, R_s, R_t, Z_xp0, Z_s, Z_t)
+      if (sqrt((R_xpoint_main(2)-R_xp0)**2 + (Z_xpoint_main(2)-Z_xp0)**2) .lt. r_margin) then
+        include_pt(i_elm_xpoint_sec(2),:,:) = .false.
+      else if (include_pt(i_elm_xpoint_sec(2),1,1)) then
+        found_upper = .true.; s_xpoint_sec(2) = s; t_xpoint_sec(2) = t; exit
+      else if (i_init == 0) then
+        s_init(2) = s; t_init(2) = t; i_elm_init(2) = i_elm_xpoint_sec(2); i_init = 1
+      end if
+    end do
+
+    if (.not. found_upper .and. i_elm_init(2) .gt. 0) then
+      s_xpoint_sec(2) = s_init(2); t_xpoint_sec(2) = t_init(2)
+      i_elm_xpoint_sec(2) = i_elm_init(2)
+    end if
+
+    if (i_elm_xpoint_sec(2) .gt. 0) then
+      call interp(node_list, element_list, i_elm_xpoint_sec(2), 1, 1, s_xpoint_sec(2), t_xpoint_sec(2), &
+        psi_xpoint_sec(2), ps_s, ps_t, P_st, P_ss, P_tt)
+      call interp_RZ(node_list, element_list, i_elm_xpoint_sec(2), s_xpoint_sec(2), t_xpoint_sec(2), &
+        R_xpoint_sec(2), R_s, R_t, Z_xpoint_sec(2), Z_s, Z_t)
+      far_axis_xpoint_sec(2) = .true.
+      xjac = R_s * Z_t - R_t * Z_s
+      if (xjac .ne. 0.d0) then
+        ps_x = (ps_s * Z_t - ps_t * Z_s) / xjac
+        ps_y = (-ps_s * R_t + ps_t * R_s) / xjac
+        write(*,'(A,i6,4f14.8)') ' Upper secondary X-point : ', i_elm_xpoint_sec(2), &
+          R_xpoint_sec(2), Z_xpoint_sec(2), psi_xpoint_sec(2), sqrt(ps_x**2+ps_y**2)
+      end if
+    end if
+    if (.not. found_upper) write(*,*) 'WARNING: upper secondary X-point not properly found'
+
+    deallocate(grad_psi_arr, include_pt)
+
+    return
+  end subroutine find_xpoint_quad_sec
 
   !> Readable output of the equilibrium state for the logfile.
   subroutine print_equil_state(verbose)
@@ -1077,6 +1290,13 @@ module equil_info
     call MPI_BCAST(ES%ifail_xpoint,   1,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
     call MPI_BCAST(ES%xpoint_init,    1,MPI_LOGICAL,0,MPI_COMM_WORLD,ierr)
     call MPI_BCAST(ES%far_axis_xpoint,2,MPI_LOGICAL,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%R_xpoint_sec,       2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%Z_xpoint_sec,       2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%Psi_xpoint_sec,     2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%s_xpoint_sec,       2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%t_xpoint_sec,       2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%i_elm_xpoint_sec,   2,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(ES%far_axis_xpoint_sec,2,MPI_LOGICAL,0,MPI_COMM_WORLD,ierr)
     
     ! --- Boundary Point
     call MPI_BCAST(ES%psi_bnd,     1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)

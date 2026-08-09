@@ -13,7 +13,7 @@ public  :: check_compatibility_and_determine_coupling_schemes, determine_couplin
 
 ! the variables below are global variables determined by scanning over particle groups, 
 ! and hence shoud NOT be modified manually
-logical :: use_ncs               = .false. !< use kinetic neutral particles 
+logical :: use_ncs               = .false. !< use kinetic neutral particles
 logical :: use_ics               = .false. !< use kinetic impurity particles
 logical :: use_rep               = .false. !< use pressure coupling scheme for runaway electrons
 logical :: use_epc               = .false. !< use current coupling scheme for energetic particles                          [PLACEHOLDER, NOT YET IMPLEMENTED]
@@ -98,13 +98,20 @@ subroutine check_compatibility_ncs(group_num)
     write(*,*) "  Please recompile with with_neutrals and with_impurities=.false."
     call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
   endif
-  
+
 end subroutine check_compatibility_ncs
 
 !> checks that the physics enabled for particle group is compatible with the ics coupling scheme
 subroutine check_compatibility_ics(group_num)
   implicit none
   integer :: group_num
+
+  !> ics not compatible with use_kin_recombination
+  if (part_group_configs(group_num)%use_kin_recombination) then
+    write(*,*) "ERROR: incompatible setting enabled for group '", part_group_configs(group_num)%id, "': "
+    write(*,*) "  use_kin_recombination can only be .t. for groups with coupling scheme 'ncs'"
+    call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
+  endif
 
   !> currently ics particles must be of type 'particle_kinetic_leapfrog'
   if (trim(part_group_configs(group_num)%type) /= 'particle_kinetic_leapfrog') then
@@ -119,6 +126,14 @@ subroutine check_compatibility_ics(group_num)
     write(*,*) "ERROR: incompatible setting enabled for group '", part_group_configs(group_num)%id, "': "
     write(*,*) "  Currently kinetic impurities are not compatible with fluid neutrals/impurities."
     write(*,*) "  Please recompile with with_neutrals and with_impurities=.false."
+    call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
+  endif
+
+  !> currently ics particles are not compatible with two temperature
+  if (with_TiTe) then
+    write(*,*) "ERROR: incompatible setting enabled for group '", part_group_configs(group_num)%id, "': "
+    write(*,*) "  Currently kinetic impurities are not compatible with two temperature models, "
+    write(*,*) "  Please recompile with with_TiTe=.false."
     call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
   endif
 
@@ -341,7 +356,7 @@ subroutine check_no_epf_rep_params(group_num)
 
 end subroutine check_no_epf_rep_params
 
-!> compares the name of a given coupling variable associated with a coupling scheme (i.e. assessed_var) 
+!> compares the name of a given coupling variable associated with a coupling scheme (i.e. assessed_var)
 !> with the list of coupling variables already used by the simulation (i.e. coupling_vars). If the 
 !> assessed_var is unique it will be appended to the list 
 subroutine assess_and_accumulate_variable(assessed_var, coupling_var_idx, coupling_vars)
@@ -385,12 +400,15 @@ subroutine determine_coupling_variables()
     enddo
 
     !> handling impurity group specific coupling variables:
-    !> these variables are not used in mod_elt_matrix_fft but are required for coupling
-    !> on the kinetic side
+    !> imp_q is used on the kinetic side for n_e correction (in evolve_ncs_ics)
+    !> zeff is read by mod_elt_matrix_fft to correct Z_eff and resistivity
     do j=1, n_ics
       coupling_var_idx = coupling_var_idx + 1
-      coupling_vars(coupling_var_idx) = "imp_q"          !< impurity charge density
+      coupling_vars(coupling_var_idx) = "imp_q"          !< impurity charge density (sum of q*weight)
       ics_indices_kin(j) = coupling_var_idx
+      coupling_var_idx = coupling_var_idx + 1
+      coupling_vars(coupling_var_idx) = "zeff"           !< impurity charge squared density (sum of q^2*weight)
+      zeff_indices_kin(j) = coupling_var_idx
     enddo
   endif
     
@@ -433,6 +451,8 @@ subroutine determine_coupling_variables()
       case ("j_Phi")
         j_Phi_idx_kin = final_var_idx
       case ("imp_q")
+        continue       !< do nothing as already handled above in use_ics loop
+      case ("zeff")
         continue       !< do nothing as already handled above in use_ics loop
       !> epf coupling vars
       case ("rho_ep")

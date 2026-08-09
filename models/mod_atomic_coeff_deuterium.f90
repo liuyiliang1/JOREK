@@ -85,7 +85,7 @@ subroutine atomic_coeff_deuterium(Te0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradD
     dIon_log10  =          A1_ion          + 2.d0*A2_ion*Te_evL10    + 3.d0*A3_ion*Te_evL10**2 + 4.d0*A4_ion*Te_evL10**3 + 5.d0*A5_ion*Te_evL10**4
 
     Sion_si  = 10.d0**(Ion_log10 - 6.d0)                      ! ionisation rate at density 10^20 in m^3 /s
-    dSion_si = 10.d0**(Ion_log10 - 6.d0) * alog(10.d0) * dion_log10
+    dSion_si = 10.d0**(Ion_log10 - 6.d0) * dlog(10.d0) * dion_log10
     
     Sion_T   = Sion_si  * t_norm * central_density * 1.d20
     dSion_dT = dSion_si * t_norm * central_density * 1.d20 * dTe_eVL10_dT0
@@ -95,7 +95,7 @@ subroutine atomic_coeff_deuterium(Te0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradD
     dRec_log10  =          A1_rec          + 2.d0*A2_rec*Te_evL10    + 3.d0*A3_rec*Te_evL10**2 + 4.d0*A4_rec*Te_evL10**3 + 5.d0*A5_rec*Te_evL10**4
 
     Srec_si  = 10.d0**(Rec_log10 - 6.d0)                      ! recombination rate at density 10^20 in m^3 /s
-    dSrec_si = 10.d0**(Rec_log10 - 6.d0) * alog(10.d0) * drec_log10
+    dSrec_si = 10.d0**(Rec_log10 - 6.d0) * dlog(10.d0) * drec_log10
     
     Srec_T   = Srec_si  * t_norm * central_density * 1.d20
     dSrec_dT = dSrec_si * t_norm * central_density * 1.d20 * dTe_eVL10_dT0
@@ -105,7 +105,7 @@ subroutine atomic_coeff_deuterium(Te0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradD
     dzlt_log10  =          A1_zlt          + 2.d0*A2_zlt*Te_evL10    + 3.d0*A3_zlt*Te_evL10**2 + 4.d0*A4_zlt*Te_evL10**3 + 5.d0*A5_zlt*Te_evL10**4
 
     Szlt_si  = 10.d0**(zlt_log10 - 6.d0)                      !line radiation rate at density 10^20 in W m^3 /s
-    dSzlt_si = 10.d0**(zlt_log10 - 6.d0) * alog(10.d0) * dzlt_log10
+    dSzlt_si = 10.d0**(zlt_log10 - 6.d0) * dlog(10.d0) * dzlt_log10
     
     Szlt_T   = Szlt_si  * (central_density * 1.d20)**2 * MU_zero * t_norm * gamma_factor                  
     dSzlt_dT = dSzlt_si * (central_density * 1.d20)**2 * MU_zero * t_norm * gamma_factor * dTe_eVL10_dT0
@@ -118,7 +118,7 @@ subroutine atomic_coeff_deuterium(Te0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradD
     dzrb_log10  =          A1_zrb          + 2.d0*A2_zrb*Te_evL10    + 3.d0*A3_zrb*Te_evL10**2 + 4.d0*A4_zrb*Te_evL10**3 + 5.d0*A5_zrb*Te_evL10**4
 
     Szrb_si  = 10.d0**(zrb_log10 - 6.d0)                      ! recombination and Bremstrahlung rate at density 10^20 in W m^3 /s
-    dSzrb_si = 10.d0**(zrb_log10 - 6.d0) * alog(10.d0) * dzrb_log10
+    dSzrb_si = 10.d0**(zrb_log10 - 6.d0) * dlog(10.d0) * dzrb_log10
     
     Szrb_T   = Szrb_si  * (central_density * 1.d20)**2 * MU_zero * t_norm * gamma_factor                  
     dSzrb_dT = dSzrb_si * (central_density * 1.d20)**2 * MU_zero * t_norm * gamma_factor * dTe_eVL10_dT0

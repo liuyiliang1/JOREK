@@ -55,10 +55,10 @@ module mod_neutral_source
     ! In the standard case with circular ablation cloud in the poloidal plane,
     ! the agreement between the two is very good unless the shard is just marginally inside the domain:
     ! in this case the numerical integral will be smaller than the analytical one, and the resulting total source will correctly reflect the ablation rate (although the local source will be overestimated)
-    if (source_volume .gt. 0.) then ! i.e., when numerical integration of the ablation source volume is used
+    if (source_volume .gt. 0.d0) then ! i.e., when numerical integration of the ablation source volume is used
        V_ns = source_volume
     else ! i.e., when numerical integration of the ablation source volume is not used
-       if (ns_delta_minor_rad .gt. 0.) then
+       if (ns_delta_minor_rad .gt. 0.d0) then
     ! i.e., with poloidally elongated ablation cloud
     ! in this case the analytical formula below is approximate (usually it agrees with the numerical integral within a few percents)
           V_ns  = PI * ns_R * ns_tor_norm * ns_radius * min(ns_delta_minor_rad,ns_radius)
@@ -74,7 +74,7 @@ module mod_neutral_source
 
     t_loc = (t_now-t_ns) * t_norm
 
-    if (t_loc .ge. 0.) then
+    if (t_loc .ge. 0.d0) then
 
       if (JET_MGI) then
 
@@ -153,7 +153,7 @@ module mod_neutral_source
       endif
 
     else ! t_loc <= 0.
-      rhon_source = 0.
+      rhon_source = 0.d0
     endif
 
     if (rhon_source < 0.) then
@@ -230,7 +230,7 @@ module mod_neutral_source
             call neutral_source(pellets(spi_i)%spi_abl,pellets(spi_i)%spi_R,pellets(spi_i)%spi_Z,pellets(spi_i)%spi_phi, &
                           pellets(spi_i)%spi_psi,pellets(spi_i)%spi_grad_psi, &
                           ns_radius_loc,ns_deltaphi,ns_delta_minor_rad,ns_tor_norm, &
-                          A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.,R,Z,phi,psi, &
+                          A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.d0,R,Z,phi,psi, &
                           source_neutral_tmp,t_now,JET_MGI,ASDEX_MGI,central_density,central_mass,spi_vol_tmp)
 
             if (present(source_neutral_drift_arr)) then
@@ -239,7 +239,7 @@ module mod_neutral_source
                   call neutral_source(pellets(spi_i)%spi_abl,pellets(spi_i)%spi_R+drift_distance(i_inj),pellets(spi_i)%spi_Z,pellets(spi_i)%spi_phi, &
                                 pellets(spi_i)%spi_psi_drift,pellets(spi_i)%spi_grad_psi_drift, &
                                 ns_radius_loc,ns_deltaphi,ns_delta_minor_rad,ns_tor_norm, &
-                                A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.,R,Z,phi,psi, &
+                                A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.d0,R,Z,phi,psi, &
                                 source_neutral_tmp_drift,t_now,JET_MGI,ASDEX_MGI,central_density,central_mass,spi_vol_tmp_drift)
                 else
                   source_neutral_tmp_drift = 0.d0 ! Plasmoid outside of the domain

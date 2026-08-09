@@ -24,14 +24,13 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 eta, visco, visco_par, visco_par_par,               &
                 restart, rst_format, regrid, bootstrap, write_ps,   &
                 bootstrap_psin_cutoff,                              &
-                regrid_from_rz, force_horizontal_Xline,             &
+                regrid_from_rz,                                     &
                 n_R, n_Z, n_radial, n_pol, n_tht, n_flux,           &
                 n_open, n_private, n_leg, n_leg_out, n_ext,         &
                 n_outer, n_inner, n_up_priv, n_up_leg, n_up_leg_out,&
                 n_tht_equidistant,                                  &
                 psi_axis_init, XR_r, SIG_r, XR_tht, SIG_tht,        &
                 XR_z, SIG_z, bgf_r, bgf_z, bgf_rpolar, bgf_tht,     &
-                xr_closed,                                          &
                 SIG_closed, SIG_open, SIG_private, SIG_theta,       &
                 SIG_leg_0, SIG_leg_1, dPSI_open, dPSI_private,      &
                 SIG_up_leg_0, SIG_up_leg_1, SIG_up_priv,            &
@@ -44,6 +43,7 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 R_geo, Z_geo, amin, mf, fbnd, fpsi, mode,           &
                 R_boundary, Z_boundary, psi_boundary, n_boundary,   &
                 R_Z_psi_bnd_file,                                   &
+                force_horizontal_Xline,                             &
                 n_pfc, manipulate_psi_map,                          &
                 Rmin_pfc, Rmax_pfc, Zmin_pfc, Zmax_pfc, current_pfc,&
                 n_jropes,                                           &
@@ -75,7 +75,6 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 FF_0,  FF_1,  FF_coef,                              &
                 ZK_par, ZK_i_par, ZK_e_par, ZK_par_max,             &
                 ZK_perp, ZK_i_perp, ZK_e_perp, D_par, D_perp,       &
-                V_pinch_gauss, V_pinch_psin, V_pinch_sig, v_pinch_file, &
                 heatsource_e, heatsource_i, heatsource,             &
                 particlesource, tauIC, Wdia,                        &
                 eta_num, visco_num, visco_par_num,                  &
@@ -147,8 +146,9 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 R_Z_psi_bnd_file, wall_file,time_evol_scheme,       &
                 spi_tor_rot, tor_frequency, spi_num_vol,            &
                 NEO, neo_file, aki_neo_const, amu_neo_const,        &
-                num_seed_islands, seed_amplitude, seed_psin,       &
-                seed_n_tor, seed_width,                            &
+                num_seed_islands, seed_psin,       &
+                seed_n_tor, seed_width, seed_m_pol, seed_q,       &
+                seed_continuous, seed_ramp_steps,           &
                 D_prof_neg_thresh, ZK_prof_neg_thresh, T_min,       &
                 D_prof_imp_neg_thresh, D_prof_tot_neg_thresh,       &
                 ZK_par_neg_thresh, D_imp_extra_neg_thresh,          &
@@ -168,7 +168,6 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 spi_Vel_RxZref, spi_quantity, spi_abl_model,        &
                 ns_radius_ratio, ns_radius_min, spi_angle,          &
                 spi_L_inj, spi_L_inj_diff, spi_abl_mag_reduction,   &
-                spi_abl_history_old,                                &
                 drift_distance, energy_teleported,                  &
                 K_Dmv, A_Dmv, L_tube, V_Dmv, P_Dmv,                 &
                 spi_Vel_diff, t_ns, JET_MGI, ASDEX_MGI,             &
@@ -228,7 +227,6 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 use_manual_random_seed, manual_seed,                &
                 use_fixed_rng_value, fixed_rng_value,               &
                 loop_voltage, export_aux_node_list,                 &
-                use_zkperp_times_density, zkperp_density_floor
                 use_zkperp_times_density, zkperp_density_floor,   &
                 slave_impurity, slave_impurity_conc,             &
                 slave_impurity_omega

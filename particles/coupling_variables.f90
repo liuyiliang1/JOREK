@@ -87,4 +87,7 @@ module coupling_variables
   !> index of coupling variables specific to each impurity group
   integer :: ics_indices_kin(n_aux_var_max) = -1
 
+  !> index of the zeff (sum of q^2) coupling variable for each impurity group
+  integer :: zeff_indices_kin(n_aux_var_max) = -1
+
 end module coupling_variables

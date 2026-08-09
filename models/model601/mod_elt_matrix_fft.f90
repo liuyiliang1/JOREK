@@ -2,6 +2,7 @@ module mod_elt_matrix_fft
 
   implicit none
 
+
 contains
 
 #include "corr_neg_include.f90"
@@ -21,7 +22,7 @@ use phys_module
 use coupling_variables
 use mod_coupling_settings
 use pellet_module
-use diffusivities, only: get_dperp, get_zkperp, get_zk_iperp, get_zk_eperp, get_vpinch
+use diffusivities, only: get_dperp, get_zkperp, get_zk_iperp, get_zk_eperp
 use equil_info, only : get_psi_n
 use corr_neg
 use mod_neutral_source
@@ -62,7 +63,6 @@ real*8     :: Bgrad_rhoimp, Bgrad_rhoimp_psi, Bgrad_rhoimp_rhoimp, Bgrad_rhoimp_
 real*8     :: ZK_par_T, dZK_par_dT, ZKi_par_T, dZKi_par_dT, ZKe_par_T, dZKe_par_dT
 real*8     :: D_prof, D_par_local, ZK_prof, ZKi_prof, ZKe_prof, psi_norm, theta, zeta, delta_u_x, delta_u_y, delta_ps_x, delta_ps_y
 real*8     :: D_prof_imp, D_par_local_imp
-real*8     :: V_prof_pinch, psi_grad2
 real*8     :: rhs_ij(n_var), rhs_ij_k(n_var)
 real*8     :: amat(n_var,n_var), amat_k(n_var,n_var), amat_n(n_var,n_var), amat_kn(n_var,n_var), amat_nn(n_var,n_var)
 
@@ -138,6 +138,11 @@ real*8     :: power_dens_teleport_ju, power_dens_teleport_ju_arr(n_inj_max) ! Te
 real*8     :: source_imp, source_imp_arr(n_inj_max)
 real*8     :: source_bg, source_bg_arr(n_inj_max)
 real*8     :: source_imp_drift, source_imp_drift_arr(n_inj_max)
+
+  ! --- ECCD-like seed island current
+  real*8     :: seed_source_val                                       !< seed source at this Gauss point
+  real*8     :: psi_tilde, j_tilde                                    !< psiseed perturbation amplitudes
+  integer    :: n_tor_mode                                            !< toroidal mode number for current harmonic
 real*8     :: source_bg_drift, source_bg_drift_arr(n_inj_max)
 
 ! time normalisation
@@ -897,6 +902,8 @@ do i=1,n_vertex_max
             drimp0_corr_dn = 0.d0 
           endif
 
+          ! --- Seed perturbation computed per toroidal harmonic inside the im loop
+
           rimp0_xx = (rimp0_ss * y_t(ms,mt)**2 - 2.d0*rimp0_st * y_s(ms,mt)*y_t(ms,mt) + rimp0_tt * y_s(ms,mt)**2 &
                     + rimp0_s * (y_st(ms,mt)*y_t(ms,mt) - y_tt(ms,mt)*y_s(ms,mt) )                                &
                     + rimp0_t * (y_st(ms,mt)*y_s(ms,mt) - y_ss(ms,mt)*y_t(ms,mt) ) )    /    xjac**2              &
@@ -1241,9 +1248,6 @@ do i=1,n_vertex_max
 
           ! --- Particle diffusivities
           D_prof         = get_dperp (psi_norm)
-          V_prof_pinch   = get_vpinch(psi_norm) * sign(1.d0,psi_bnd-psi_axis)
-          psi_grad2      = ps0_x**2 + ps0_y**2
-          if (psi_grad2 < 1.d-30) psi_grad2 = 1.d-30
           D_par_local     = D_par
           D_par_local_imp = D_par_imp
           D_perp_num_psin = D_perp_num +                                                  &
@@ -1581,7 +1585,7 @@ do i=1,n_vertex_max
             !#  Induction Equation                                                                             #
             !###################################################################################################
 
-            rhs_ij(var_psi) = v * eta_T  * (zj0 - current_source(ms,mt) - Jb)/ BigR           * xjac * tstep * factor(var_psi,1) &
+            rhs_ij(var_psi) = v * eta_T  * (zj0 - current_source(ms,mt) - Jb)/ BigR  * xjac * tstep * factor(var_psi,1) &
                       
                       + v * (ps0_s * u0_t - ps0_t * u0_s)                                            * tstep * factor(var_psi,2) &
                       - v * F0 / BigR  * u0_p                                                 * xjac * tstep * factor(var_psi,2) &
@@ -1656,8 +1660,6 @@ do i=1,n_vertex_max
                            + BigR**2 * ( -aux_divPIR_perp*v_y + aux_divPIZ_perp*v_x)  * xjac * tstep * factor(var_u,13)
                         ! ---------------------------------   end of kinetic coupling terms -------------------------------------------
 
-
-            
             ! --- Centrifugal force contribution (½ρΩ²R² in effective pressure balance)
             ! Ω² = v_par²·F0²/(BigR⁴·BB2)
             ! C0 = ½·r0·v_par²·F0²/(BigR²·BB2)
@@ -1723,28 +1725,23 @@ do i=1,n_vertex_max
 
                        - D_perp_num_psin*(v_xx + v_x/Bigr + v_yy)*(r0_xx + r0_x/Bigr + r0_yy) * BigR                                 * xjac * tstep * factor(var_rho,11)&
 
-                       - tgnum_rho * 0.25d0 * BigR**3 * (r0_x * u0_y - r0_y * u0_x)                              &
-                                                    * ( v_x * u0_y - v_y * u0_x) * xjac * tstep * tstep                                  * factor(var_rho,12)&
-                       - tgnum_rho * 0.25d0 / BigR * vpar0**2                                                    &
-                                 * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                              &
-                                 * ( v_x * ps0_y -  v_y * ps0_x                   ) * xjac * tstep * tstep                               * factor(var_rho,12)&
+                       - tgnum_rho * 0.25d0 * BigR**3 * (r0_x * u0_y - r0_y * u0_x)                                                                                     &
+                                                    * ( v_x * u0_y - v_y * u0_x) * xjac * tstep * tstep                                             * factor(var_rho,12)&
+                       - tgnum_rho * 0.25d0 / BigR * vpar0**2                                                                                                           &
+                                 * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                                                                                     &
+                                 * ( v_x * ps0_y -  v_y * ps0_x                   ) * xjac * tstep * tstep * factor(var_rho,12) &
 
                       ! ------------------------------ from kinetic neutral / impurity coupling --------------------------------------
-                       + v * BigR * aux_rho0                                                                                         * xjac * tstep * factor(var_rho,13) &
+                       + v * BigR * aux_rho0                                                                                         * xjac * tstep * factor(var_rho,13) 
                       ! -------------------------------- end of terms from kinetic coupling ------------------------------------------
 
-                      ! --- Inward pinch (rho only): weak form of -∇·(r0 * V_pinch_vec),
-                      !     V_pinch_vec = -V_prof_pinch * ∇ψ/|∇ψ| (positive V_prof_pinch = inward toward magnetic axis)
-                       - V_prof_pinch / sqrt(psi_grad2) * (v_x * ps0_x + v_y * ps0_y) * r0 * BigR * xjac * tstep * factor(var_rho,14)
-
-            rhs_ij_k(var_rho) = - ((D_par_local+D_par_sc_num*tau_sc)-D_prof) * BigR / BB2 * Bgrad_rho_k_star * (Bgrad_rho-Bgrad_rhoimp) * xjac * tstep * factor(var_rho,4) &
-                            - ((D_par_local_imp+D_par_imp_sc_num*tau_sc)-D_prof_imp) * BigR / BB2 * Bgrad_rho_k_star * Bgrad_rhoimp     * xjac * tstep * factor(var_rho,4) &
-                            - D_prof * BigR  * (                  v_p*(r0_p-rimp0_p) /BigR**2 )     * xjac * tstep * factor(var_rho,5) &
-                            - D_prof_imp * BigR  * (                  v_p*rimp0_p /BigR**2 )        * xjac * tstep * factor(var_rho,5) &
-                       - tgnum_rho * 0.25d0 / BigR * vpar0**2 &
-                                 * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                              &
-                                 * (                            + F0 / BigR * v_p) * xjac * tstep * tstep        * factor(var_rho,12) 
-
+            rhs_ij_k(var_rho) = - ((D_par_local+D_par_sc_num*tau_sc)-D_prof) * BigR / BB2 * Bgrad_rho_k_star * (Bgrad_rho-Bgrad_rhoimp)    * xjac * tstep * factor(var_rho,4) &
+                            - ((D_par_local_imp+D_par_imp_sc_num*tau_sc)-D_prof_imp) * BigR / BB2 * Bgrad_rho_k_star * Bgrad_rhoimp        * xjac * tstep * factor(var_rho,4) &
+                            - D_prof * BigR  * (                  v_p*(r0_p-rimp0_p) /BigR**2 )                                      * xjac * tstep * factor(var_rho,5) &
+                            - D_prof_imp * BigR  * (                  v_p*rimp0_p /BigR**2 )                                         * xjac * tstep * factor(var_rho,5) &
+                       - tgnum_rho * 0.25d0 / BigR * vpar0**2                                                                                                           &
+                                 * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                                                                                     &
+                                 * (                            + F0 / BigR * v_p) * xjac * tstep * tstep                                          * factor(var_rho,12)
 
             !###################################################################################################
             !#  Parallel Velocity Equation                                                                     #
@@ -1817,13 +1814,6 @@ do i=1,n_vertex_max
                                 + aki_neo_prof(ms,mt) * tauIC*2. * r0 * (ps0_x * Ti0_x + ps0_y * Ti0_y) - r0 * Vpar0 * Btheta2) * xjac * tstep * factor(var_vpar,10) * BigR
               endif
 
-              ! --- Inward pinch: advection of v_par by V_pinch = -V_prof_pinch * ∇ψ/|∇ψ|
-              !     Adds ρ V_pinch · ∇v_par to the v_par equation (momentum-conserving coupling to density pinch)
-              rhs_ij(var_vpar) = rhs_ij(var_vpar) &
-                                 + V_prof_pinch / sqrt(psi_grad2) * (ps0_x * vpar0_x + ps0_y * vpar0_y) &
-                                         * r0 * v * BigR * xjac * tstep * factor(var_vpar,13)
-
-
               rhs_ij_k(var_vpar) = + 0.5d0 * r0 * vpar0**2 * BB2 * F0 / BigR * v_p                      * xjac * tstep * factor(var_vpar,3) &
   
                  - tgnum_vpar * 0.25d0 * r0 * Vpar0**2 * BB2 &
@@ -1839,6 +1829,24 @@ do i=1,n_vertex_max
                  - visco_par_par * F0**2 / (BigR * BB2) * Bgrad_vpar * Bgrad_rho_k_star             * xjac * tstep * factor(var_vpar,9)
 
             end if ! (with_vpar)
+
+            !###################################################################################################
+            !#  Seed Island Source (psiseed: helical flux perturbation)                                      #
+            !###################################################################################################
+            if (num_seed_islands > 0) then
+              if (use_fft) then
+                call seed_current_source(ps0, BigR, y_g(ms,mt), phi, R_axis, Z_axis, -1, seed_source_val)
+              else
+                call seed_current_source(ps0, BigR, y_g(ms,mt), 0.d0, R_axis, Z_axis, mode(im), seed_source_val)
+              end if
+
+              ! --- psiseed: flux perturbation injected into psi equation (each timestep)
+              psi_tilde = (seed_width(1) / 4.d0)**2 &
+                        * abs(psi_bnd - psi_axis) * abs(get_dq_dpsi(seed_psin(1))) &
+                        * (dble(seed_n_tor(1)) / dble(seed_m_pol(1)))    ! n/m factor
+              rhs_ij(var_psi) = rhs_ij(var_psi) &
+                + v * psi_tilde * seed_source_val / BigR * xjac * factor(var_psi, 5)
+            end if
             
 
             if ( with_TiTe ) then ! (with_TiTe) ****************************************************
@@ -2356,7 +2364,7 @@ do i=1,n_vertex_max
                   psi_ypp = ( - x_t(ms,mt) * h_s(k,l,ms,mt) + x_s(ms,mt) * h_t(k,l,ms,mt) ) / xjac * element%size(k,l) * HHZ_pp(in,mp)
 
                   u    = psi    ;  zj    = psi    ;  w    = psi    ; rho    = psi    ;  Ti    = psi    ; vpar    = psi   ; Te   = psi    ; T   = psi    ;  rhoimp    = psi    ;
-                  u_x  = psi_x  ;  zj_x  = psi_x  ;  w_x  = psi_x  ; rho_x  = psi_x  ;  Ti_x  = psi_x  ; vpar_x  = psi_x ; Te_x = psi_x  ; T_x = psi_x  ;  rhoimp_x  = psi_x  ;
+                  u_x  = psi_x  ;  zj_x  = psi_x  ;  w_x  = psi_x  ; rho_x  = psi_x  ;  Ti_x  = psi_x  ; vpar_x  = psi_x ; Te_x = psi_x  ; T_x = psi_x  ;  rhoimp_x  = psi_x  ;;
                   u_y  = psi_y  ;  zj_y  = psi_y  ;  w_y  = psi_y  ; rho_y  = psi_y  ;  Ti_y  = psi_y  ; vpar_y  = psi_y ; Te_y = psi_y  ; T_y = psi_y  ;  rhoimp_y  = psi_y  ;
                   u_p  = psi_p  ;  zj_p  = psi_p  ;  w_p  = psi_p  ; rho_p  = psi_p  ;  Ti_p  = psi_p  ; vpar_p  = psi_p ; Te_p = psi_p  ; T_p = psi_p  ;  rhoimp_p  = psi_p  ;
                   u_s  = psi_s  ;  zj_s  = psi_s  ;  w_s  = psi_s  ; rho_s  = psi_s  ;  Ti_s  = psi_s  ; vpar_s  = psi_s ; Te_s = psi_s  ; T_s = psi_s  ;  rhoimp_s  = psi_s  ;
@@ -2402,7 +2410,7 @@ do i=1,n_vertex_max
                   Bgrad_rhoimp_rhoimp   = ( rhoimp_x * ps0_y - rhoimp_y * ps0_x ) / BigR
                   Bgrad_rhoimp_rhoimp_n = ( F0 / BigR * rhoimp_p ) / BigR
                   Bgrad_vpar_psi      = ( vpar0_x  * psi_y - vpar0_y  * psi_x ) / BigR
-                  Bgrad_vpar_vpar       = ( vpar_x * ps0_y - vpar_y * ps0_x ) / BigR
+                  Bgrad_vpar_vpar       = ( vpar_x * ps0_y - vpar_y * ps0_y ) / BigR
 
                   BB2_psi            = 2.d0 * (psi_x * ps0_x + psi_y * ps0_y ) /BigR**2
 
@@ -2788,6 +2796,7 @@ do i=1,n_vertex_max
                     ! New term coming from -(\partial_t \rho + \nabla \cdot (\rho \mathbf{v})) \mathbf{v} in RHS of momentum equation
                     ! (see wiki: https://www.jorek.eu/wiki/doku.php?id=model500_501_555#equations):
                     amat_n(var_u,var_vpar) = - BigR * r0 * F0 * vpar_p * (v_x * u0_x + v_y * u0_y) * xjac * theta * tstep * fact_conservative_u
+
                   endif ! /with_vpar
 
                   if (with_neutrals) then
@@ -2890,9 +2899,7 @@ do i=1,n_vertex_max
 
                           + tgnum_rho * 0.25d0 / BigR * vpar0**2                                                        &
                                     * (rho_x * ps0_y - rho_y * ps0_x )                             &
-                                    * ( v_x * ps0_y -  v_y * ps0_x   ) * xjac * theta * tstep * tstep &
-
-                          + V_prof_pinch / sqrt(psi_grad2) * (v_x * ps0_x + v_y * ps0_y) * rho * BigR   * xjac * theta * tstep
+                                    * ( v_x * ps0_y -  v_y * ps0_x   ) * xjac * theta * tstep * tstep
 
                   amat_k(var_rho,var_rho) = + ((D_par_local+D_par_sc_num*tau_sc)-D_prof) * BigR / BB2 * Bgrad_rho_k_star * Bgrad_rho_rho          * xjac * theta * tstep &
  
@@ -3049,8 +3056,8 @@ do i=1,n_vertex_max
                     amat_k(var_vpar,var_psi) = - 0.5d0 * r0 * vpar0**2 * BB2_psi * F0 / BigR * v_p                                          * xjac * theta * tstep &
                                                - visco_par_par * F0**2 / (BigR * BB2**2) * BB2_psi * Bgrad_vpar * Bgrad_rho_k_star          * xjac * theta * tstep &
                                                + visco_par_par * F0**2 / (BigR * BB2)          * Bgrad_vpar_psi * Bgrad_rho_k_star          * xjac * theta * tstep  
-                    amat(var_vpar,var_u) = 0.d0         
-                    
+                    amat(var_vpar,var_u) = 0.d0
+
                     !---------------------------------------- NEO
                     if ( NEO ) then
                       amat(var_vpar,var_psi) = amat(var_vpar,var_psi) &
@@ -3103,11 +3110,7 @@ do i=1,n_vertex_max
 
                                + tgnum_vpar * 0.25d0 * vpar0 * Vpar0**2 * BB2 * fact_conservative_u &
                                          * (-(ps0_s * rho_t - ps0_t * rho_s)/xjac                          ) / BigR  &
-                                         * (-(ps0_s * v_t     - ps0_t * v_s)    /xjac)  * xjac * theta * tstep*tstep &
-
-                               ! --- Inward pinch: d/d(rho) of ρ V_pinch · ∇v_par
-                               + V_prof_pinch / sqrt(psi_grad2) * (ps0_x * vpar0_x + ps0_y * vpar0_y) &
-                                       * rho * v * BigR * xjac * theta * tstep
+                                         * (-(ps0_s * v_t     - ps0_t * v_s)    /xjac)  * xjac * theta * tstep*tstep
 
                     !===============================End of new TG_num terms============================
 
@@ -3256,13 +3259,9 @@ do i=1,n_vertex_max
 
                     !===============================End of new TG_num terms============================
                             
-                            + visco_par_par * F0**2 / (BigR * BB2) * Bgrad_vpar_vpar * Bgrad_rho_star         * xjac * theta * tstep &
+                            + visco_par_par * F0**2 / (BigR * BB2) * Bgrad_vpar_vpar * Bgrad_rho_star         * xjac * theta * tstep
 
-                            ! --- Inward pinch: d/d(vpar) of rho V_pinch . grad(v_par)
-                            + V_prof_pinch / sqrt(psi_grad2) * (ps0_x * vpar_x + ps0_y * vpar_y) &
-                                    * r0 * v * BigR * xjac * theta * tstep
-
-
+  
                     if (normalized_velocity_profile) then
                       amat(var_vpar,var_vpar) = amat(var_vpar,var_vpar) + (visco_par + visco_par_sc_num * tau_sc) * (v_x * Vpar_x + v_y * Vpar_y) * BigR        * xjac  * theta * tstep 
                     else
@@ -4821,7 +4820,7 @@ do i=1,n_vertex_max
                           * ( + F0 / BigR * v_p) * xjac * theta * tstep * tstep
 
                   endif
-                  
+
                   !###################################################################################################
                   !# end equations                                                                                   #
                   !###################################################################################################
@@ -6006,5 +6005,145 @@ enddo
 return
 end subroutine my_fft
 
+
+!=======================================================================
+!> Gaussian source for ECCD-like seed island current
+!!
+!! Two modes of operation:
+!!
+!! 1. Non-FFT mode (n_tor_mode >= 0):
+!!    The source is filtered by toroidal mode number. Only seeds with
+!!    seed_n_tor(i) == 0 (apply to all n) or seed_n_tor(i) == n_tor_mode
+!!    contribute to the source.
+!!
+!! 2. FFT mode (n_tor_mode < 0):
+!!    The source is modulated by cos(seed_n_tor(i) * phi) at each
+!!    toroidal plane. After FFT, this naturally contributes only to the
+!!    cosine component of the matching toroidal harmonic.
+!!    seed_n_tor(i) == 0 gives an axisymmetric (n=0) source.
+!> C^1-continuous temporal envelope for seed island injection.
+!!   One-time pulse: f(t) = sin^2(pi * step/ramp_steps)  [C-infinity bump 0->1->0]
+!!   Continuous:     f(t) = sin^2(pi * step/(2*ramp_steps)) for t<1, f=1 for t>=1
+!!   where t = seed_inject_step / seed_ramp_steps.
+pure real*8 function seed_temporal_envelope()
+  use phys_module, only: seed_continuous, seed_inject_step, seed_ramp_steps
+  use constants, only: PI
+  implicit none
+  real*8 :: t
+
+  if (seed_ramp_steps <= 0) then
+    seed_temporal_envelope = 1.d0
+    return
+  end if
+
+  t = dble(seed_inject_step) / dble(seed_ramp_steps)
+
+  if (seed_continuous) then
+    ! Smooth ramp 0->1: sin^2(pi*t/2), C^1 at t=1
+    if (t >= 1.d0) then
+      seed_temporal_envelope = 1.d0
+    else
+      seed_temporal_envelope = sin(0.5d0 * PI * t)**2
+    end if
+  else
+    ! One-time pulse 0->1->0: sin^2(pi*t), C^1 at t=0 and t=1
+    if (t >= 1.d0) then
+      seed_temporal_envelope = 0.d0
+    else
+      seed_temporal_envelope = sin(PI * t)**2
+    end if
+  end if
+end function seed_temporal_envelope
+
+
+subroutine seed_current_source(ps, R, Z, phi, R_axis, Z_axis, n_tor_mode, source_val)
+  use equil_info, only: ES
+  use phys_module, only: num_seed_islands, seed_psin, seed_width, &
+                         seed_n_tor, seed_m_pol, seed_q, seed_continuous, seed_inject_step, &
+                         seed_ramp_steps
+  use mod_seed_theta_lookup, only: seed_theta_lookup_initialized, seed_lookup_theta_star
+  use mod_bootstrap_functions, only: get_psi_n_from_q, get_dq_dpsi
+  use constants, only: PI
+  implicit none
+  real*8, intent(in)  :: ps               !< poloidal flux at Gauss point
+  real*8, intent(in)  :: R, Z             !< (R,Z) coordinates at Gauss point
+  real*8, intent(in)  :: phi              !< toroidal angle [rad] (FFT mode)
+  real*8, intent(in)  :: R_axis, Z_axis   !< magnetic axis
+  integer, intent(in) :: n_tor_mode       !< <0 = FFT mode; >=0 = non-FFT target mode
+  real*8, intent(out) :: source_val
+  integer :: i, m_pol
+  real*8 :: psi_n, width, psi0
+  real*8 :: theta, theta_star, helical, radial_gauss, n_tor_dbl
+  real*8 :: psi_n_tmp
+  real*8 :: t_envelope
+  logical, save :: q_converted = .false.
+
+  source_val = 0.d0
+  if (num_seed_islands == 0) return
+
+  ! --- Lazy one-time conversion: seed_q -> seed_psin, seed_m_pol auto-set
+  !     MUST run before envelope check (seed_m_pol needed for n/m factor)
+  !$OMP CRITICAL (seed_q_convert)
+  if (.not. q_converted) then
+    do i = 1, num_seed_islands
+      if (seed_q(i) > 0.d0) then
+        psi_n_tmp = get_psi_n_from_q(seed_q(i))
+        if (psi_n_tmp >= 0.d0) then
+          seed_psin(i) = psi_n_tmp
+          if (seed_m_pol(i) == 0 .and. seed_n_tor(i) /= 0) then
+            seed_m_pol(i) = nint(seed_q(i) * dble(seed_n_tor(i)))
+          end if
+        end if
+      end if
+    end do
+    q_converted = .true.
+  end if
+  !$OMP END CRITICAL (seed_q_convert)
+
+  ! --- Compute smooth temporal envelope
+  t_envelope = seed_temporal_envelope()
+
+  psi_n = (ps - ES%psi_axis) / sign(max(abs(ES%psi_bnd - ES%psi_axis), 1.d-12), &
+                                         ES%psi_bnd - ES%psi_axis)
+
+  ! --- Compute poloidal angle at this Gauss point (geometric angle from axis)
+  theta = atan2(Z - Z_axis, R - R_axis)
+  if (theta < 0.d0) theta = theta + 2.d0 * PI
+
+  ! --- Convert to straight-field-line angle (if lookup table initialized)
+  if (seed_theta_lookup_initialized) then
+    theta_star = seed_lookup_theta_star(psi_n, theta)
+  else
+    theta_star = theta
+  end if
+
+  do i = 1, num_seed_islands
+    psi0  = seed_psin(i)
+    width = max(seed_width(i), 1.d-6)
+    m_pol = seed_m_pol(i)
+
+    radial_gauss = exp(-0.5d0 * ((psi_n - psi0) / width)**2)
+
+    if (n_tor_mode >= 0) then
+      ! Non-FFT mode: filter by toroidal mode number, radial Gaussian only
+      if (seed_n_tor(i) /= 0 .and. seed_n_tor(i) /= n_tor_mode) cycle
+      source_val = source_val + radial_gauss * t_envelope
+    else
+      ! FFT mode: helical source with poloidal + toroidal structure
+      if (m_pol > 0) then
+        ! --- Helical structure: cos(m*theta* - n*phi) resonant at q=m/n
+        !     Uses straight-field-line angle for correct alignment with field lines
+        n_tor_dbl = dble(seed_n_tor(i))
+        helical   = cos(dble(m_pol) * theta_star - n_tor_dbl * phi)
+        source_val = source_val + radial_gauss * helical * t_envelope
+      else
+        ! Backward compatible: no poloidal structure, cos(n*phi) modulation only
+        n_tor_dbl = dble(seed_n_tor(i))
+        source_val = source_val + radial_gauss * cos(n_tor_dbl * phi) * t_envelope
+      end if
+    end if
+  enddo
+
+end subroutine seed_current_source
 
 end module mod_elt_matrix_fft
