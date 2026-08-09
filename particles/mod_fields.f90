@@ -369,7 +369,7 @@ subroutine calc_NeTeTi(fields,time,i_elm,st,phi,                   &
 
 end subroutine calc_NeTeTi
 
-subroutine calc_NeTevpar(fields, time, i_elm, st, phi, n_e, T_e, vpar, grad_T_e)
+subroutine calc_NeTevpar(fields, time, i_elm, st, phi, n_e, T_e, vpar, grad_T_e, grad_n)
   use phys_module, only: central_density, central_mass
   use constants
   class(fields_base), intent(in)                    :: fields
@@ -379,11 +379,12 @@ subroutine calc_NeTevpar(fields, time, i_elm, st, phi, n_e, T_e, vpar, grad_T_e)
   real*8, intent(out)                               :: T_e !< electron temperature [K]
   real*8, intent(out)                               :: vpar !< parallel velocity [m/s / T] (multiply by norm2(B) still to get [m/s])
   real*8, intent(out), optional, dimension(3)       :: grad_T_e !< gradient of electron temperature [K/m]
-  
+  real*8, intent(out), optional, dimension(3)       :: grad_n   !< gradient of plasma density [m^-4]
 
   real*8, dimension(3) :: P, P_s, P_t, P_phi, P_time
   real*8               :: R, R_s, R_t, Z, Z_s, Z_t, xjac
   real*8               :: T_norm !< temperature normalisation
+  real*8               :: n_norm !< density normalisation
   real*8               :: v_norm !< vpar normalisation
 
 #if (JOREK_MODEL == 400)
@@ -394,7 +395,8 @@ subroutine calc_NeTevpar(fields, time, i_elm, st, phi, n_e, T_e, vpar, grad_T_e)
   call fields%interp_PRZ(time,i_elm,[5,6,7],3,st(1),st(2),phi,P,P_s,P_t,P_phi,P_time,R,R_s,R_t,Z,Z_s,Z_t)
 #endif
 
-  n_e = max(central_density * P(1) * 1d20,1d16)                           ! plasma density [1/m^3], capped against negative
+  n_norm = central_density * 1d20
+  n_e = max(P(1) * n_norm, 1d16)                                            ! plasma density [1/m^3], capped against negative
   T_norm = (1.d0/K_BOLTZ/(2.d0*MU_ZERO*central_density*1.d20))
 #if (JOREK_MODEL == 400)
   T_norm = T_norm*2.d0 ! P(1) contains the electron temperature, reverse previous correction
@@ -404,12 +406,19 @@ subroutine calc_NeTevpar(fields, time, i_elm, st, phi, n_e, T_e, vpar, grad_T_e)
   v_norm = 1.d0/sqrt(MU_ZERO*central_mass*central_density*1.d20*atomic_mass_unit)
   vpar = P(3)*v_norm !note that it should still be multiplied by the norm of the B field to be si
 
-  if (present(grad_T_e)) then
-
+  ! Compute gradients if requested (grad_T_e and grad_n share the same xjac)
+  if (present(grad_T_e) .or. present(grad_n)) then
     xjac = jac(R_s,R_t,Z_s,Z_t)
-    grad_T_e = T_norm*[(  P_s(2) * Z_t - P_t(2) * Z_s)/ xjac, &
-                     (- P_s(2) * R_t + P_t(2) * R_s)/ xjac, &
-                     P_phi(2)/R]
+    if (present(grad_T_e)) then
+      grad_T_e = T_norm*[(  P_s(2) * Z_t - P_t(2) * Z_s)/ xjac, &
+                       (- P_s(2) * R_t + P_t(2) * R_s)/ xjac, &
+                       P_phi(2)/R]
+    end if
+    if (present(grad_n)) then
+      grad_n(1) = n_norm * (  P_s(1) * Z_t - P_t(1) * Z_s) / xjac
+      grad_n(2) = n_norm * (- P_s(1) * R_t + P_t(1) * R_s) / xjac
+      grad_n(3) = n_norm * P_phi(1) / R
+    end if
   end if
 end subroutine calc_NeTevpar
 

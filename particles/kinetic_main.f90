@@ -55,7 +55,7 @@ use phys_module, only: deuterium_adas,sqrt_mu0_over_rho0
 use phys_module, only: filter_perp, filter_hyper, filter_par, filter_perp_n0, filter_hyper_n0, filter_par_n0
 use phys_module, only: apply_dirichlet_proj, part_group_configs, init_particles_only
 use phys_module, only: use_manual_random_seed, manual_seed
-use phys_module, only: use_imp_adas, nimp_bg 
+use phys_module, only: use_imp_adas, nimp_bg
 
 use mod_particle_group_id, only: matching_part_config_indices
 
@@ -230,7 +230,7 @@ neutral_collisions = neutral_collisions_from_config(sim)
 jorek_feedback = new_projection(sim%fields%node_list, sim%fields%element_list, &
                                 filter_n0 = filter_perp_n0, filter_hyper_n0 = filter_hyper_n0, filter_parallel_n0=filter_par_n0,            &
                                 filter = filter_perp, filter_hyper = filter_hyper, filter_parallel=filter_par, fractional_digits = 9,       &
-                                do_zonal = .false., calc_integrals=.false., to_vtk=.false., to_h5 = .false., basename='projections', nsub=2, &
+                                do_zonal = .false., calc_integrals=.false., to_vtk=.true., to_h5 = .false., basename='projections', nsub=2, &
                                 do_dirichlet=apply_dirichlet_proj)
 aux_node_list => jorek_feedback%node_list
 
@@ -350,6 +350,12 @@ do while (.not. sim%stop_now)
     write(header_line,'(A,I6,A,I6)') "Starting inner particle loop iteration getting us to istep_inner_loop=",istep_inner_loop," out of ",sim%nstep_inner_loop
     call write_to_outputfile(sim,header_line,next_block_write_conserv=.false.,next_block_write_timing=.false.)
 
+  enddo
+
+  do group_num=1, n_part_groups
+    call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj,inner_stepsize,edge_elm_template)
+  enddo
+  do istep_inner_loop=inner_stepsize,sim%nstep_inner_loop,inner_stepsize
     !updating inner loop steps
     sim%istep_inner_loop = istep_inner_loop
     if(istep_inner_loop == sim%nstep_inner_loop) then
@@ -368,7 +374,7 @@ do while (.not. sim%stop_now)
 
     ! evolution loop is called every inner particle step, for inner_stepsize number of steps at once
     do group_num=1, n_part_groups
-      call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj, inner_stepsize)
+      call evolve_particle_group(sim, group_num, jorek_feedback, rng, sim%tstep_part_adj, inner_stepsize, edge_elm_template)
     enddo  
 
     ! --- Handling the particles that left the domain
@@ -383,11 +389,11 @@ do while (.not. sim%stop_now)
         call wall_act_groups(i)%do(sim,.true.)
       enddo
     endif
-  
+
     !neutral self collisions, which need the projected neutral density
     if (size(neutral_collisions) > 0 .and. (mod(istep_inner_loop,gcd_neutral_collisions)==0 .or. last_step)) then
       call write_to_outputfile(sim, "Neutral self collisions")
-  
+
       ! update the neutral density which are necessary for the neutral collisions
       call get_neutral_density(sim,neutral_density_proj)
 
@@ -415,7 +421,7 @@ do while (.not. sim%stop_now)
   
 
   ! -- Finalising the fluid timestep
-  
+
   !Writing interim particle restart files every nout fluid steps done. Overwrites previous restart file to save space
   if ( nout_particles .eq. 9999999 ) then
     if ( mod(index_now,nout) .eq. 0 ) then

@@ -560,6 +560,8 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
   write(*,LOGI_FMT) 'eta_num_T_dependent   ', eta_num_T_dependent
   write(*,LOGI_FMT) 'eta_num_psin_dependent', eta_num_psin_dependent
   write(*,REAL_FMT) 'eta_num_prof          ', eta_num_prof(1:6)
+  write(*,LOGI_FMT) 'eta_num_xpoint_dependent', eta_num_xpoint_dependent
+  write(*,REAL_FMT) 'eta_num_xpoint        ', eta_num_xpoint
   write(*,REAL_FMT) 'visco_num             ', visco_num
   write(*,LOGI_FMT) 'visco_num_T_dependent ', visco_num_T_dependent
   write(*,REAL_FMT) 'visco_par_num         ', visco_par_num
@@ -1111,6 +1113,9 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           write(*,LOGI_FMT) 'use_kin_bg_collisions,  ',sim%groups(group_num)%use_kin_bg_collisions
           write(*,CHAR_FMT) 'kin_bg_coll_type,  ',sim%groups(group_num)%kin_bg_coll_type
           write(*,REAL_FMT) 'homma2020_alpha,  ',sim%groups(group_num)%homma2020_alpha
+          write(*,INTG_FMT) 'ics_group_idx,    ',sim%groups(group_num)%ics_group_idx
+          write(*,LOGI_FMT) 'use_sheath,       ',sim%groups(group_num)%use_sheath
+          write(*,REAL_FMT) 'ics_concentration,',sim%groups(group_num)%ics_concentration
         endif
 
         write(*,CHAR_FMT) 'atom_data_suffix,       ',trim(part_group_configs(group_num)%atom_data_suffix)
@@ -1188,6 +1193,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', part_group_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 
@@ -1239,6 +1245,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', fluid_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 

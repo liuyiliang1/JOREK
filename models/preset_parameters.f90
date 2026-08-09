@@ -291,6 +291,8 @@ subroutine preset_parameters
   corr_neg_dens_coef(:) = (/ 0.5, 0.5 /)
 
   eta_num            = 0.d0
+  eta_num_xpoint_dependent = .false.
+  eta_num_xpoint      = 0.d0
   visco_num          = 0.d0
   visco_par_num      = 0.d0
   D_perp_num         = 0.d0
@@ -786,7 +788,7 @@ subroutine preset_parameters
   energy_teleported = 0.d0 
   constant_imp_source = 0.d0
 
-  L_tube = 0. ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
+  L_tube = 0.d0 ! Needed to ensure injection starts at t_ns when JET_MGI=ASDEX_MGI=.false.
 
   !====== JET DMV-2 parameters
   !L_tube = 2.4d0
@@ -923,6 +925,8 @@ part_group_configs(:)%use_kin_bg_collisions  = .false.
 part_group_configs(:)%kin_bg_coll_type       = 'Homma2020'
 part_group_configs(:)%homma2020_alpha        = 1.5d0
 part_group_configs(:)%ics_group_idx          = -1
+part_group_configs(:)%use_sheath             = .false.
+part_group_configs(:)%ics_concentration      = 0.d0
 
 !----- specific to rep 
 part_group_configs(:)%num_re                 = 0.d0

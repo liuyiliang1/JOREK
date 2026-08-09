@@ -331,6 +331,8 @@ module phys_module
   logical :: eta_num_T_dependent     !< Hyper-resistivity dependent on temperature? Otherwise constant.
   logical :: eta_num_psin_dependent  !< Give profile for Hyper-resistivity as function of \psi_N? Useful for 2D current flattening
   real*8  :: eta_num_prof(10)        !< Coefficients to specify \psi_N profile for hyper-resistivity
+  logical :: eta_num_xpoint_dependent !< Add extra hyper-resistivity localized around X-point(s)
+  real*8  :: eta_num_xpoint          !< Magnitude of X-point localized hyper-resistivity
   logical :: visco_num_T_dependent!< Hyper-visocsity dependent on temperature? Otherwise constant.
   logical :: add_sources_in_sc    !< Whether to add effect of sources in shock-capturing stabilization or not
 
@@ -986,6 +988,7 @@ module phys_module
   integer :: find_RZ_nearby_iter  !< the maximum newton iterations used in find_RZ_nearby 
   real*8  :: find_RZ_nearby_tol   !< the squared element tolerance used in find_RZ_nearby for finding a position inside an element (unit: element size)
 
+
   ! -----------------------------------------------
   ! --- Structures for particle valves 
   ! -----------------------------------------------
@@ -1097,7 +1100,8 @@ module phys_module
                                                    !< recommended value is 1.5 for ion heat flux, see Homma 2020 and Fundamenski 2005
     integer             :: ics_group_idx           !< internal index given to this specific impurities group, used to obtain the variable index of charge density
                                                    !< projectons specific to this group, as we require a charge density projection for each impurities group for coupling
-                                             
+    logical             :: use_sheath              !< switch on sheath boundary conditions for this impurities group
+    real*8              :: ics_concentration = 0.d0 !< impurity concentration for density-proportional initialization (0 = use puffing mode)
 
     !> --------------- puffing ----------------------
 

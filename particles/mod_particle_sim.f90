@@ -5,6 +5,7 @@ use mod_fields
 use mod_openadas
 use mod_coronal
 use basis_at_gaussian
+use phys_module, only: adas_dir
 implicit none
 private
 public particle_group, particle_sim, configure_particle_groups
@@ -24,22 +25,7 @@ type :: particle_group
   real*8             :: average_weight         = -1.d0    !< average weight of all particles in the group (preset value negative to avoid killing of particles in first instance)
   logical            :: do_conservation_checks = .false.  !< whether to write conservation checks every interaction in the output file (i.e. the change in particles/momentum/energy etc.)
  
-  ! ================ for neutrals and impurities =============
-  logical            :: use_kin_ionisation = .false.      !< switch on ionisation for group         
-  logical            :: use_kin_puffing    = .false.      !< switch on particle puffing for group
-  logical            :: use_kin_radiation  = .false.      !< switch on line radiation for group
-
-  ! --- neutrals only
-  logical            :: use_kin_cx            = .false.   !< switch on charge-exchange for group  
-  logical            :: use_kin_recombination = .false.   !< switch on recombination for group       
-  logical            :: use_kin_neutral_coll  = .false.   !< switch on neutral self-collisions for group       
-
-  ! --- impurities only
-  logical            :: use_kin_bg_collisions = .false.     !< switch on collisions with the background plasma
-  character(len=9)   :: kin_bg_coll_type      = 'Homma2020' !< method to calculate heat flux in kin_bg_collision
-  real*8             :: homma2020_alpha       = 1.5d0       !< flux limiting factor alpha for Homma2020 heat flux
-  integer            :: ics_group_idx         = -1          !< internal index given to this specific impurities group
-
+  ! ================ for neutrals and impurities ======
   class(particle_base), dimension(:), allocatable :: particles
 
 end type particle_group
@@ -117,6 +103,8 @@ subroutine configure_particle_groups(sim)
       sim%groups(i)%kin_bg_coll_type       =  config%kin_bg_coll_type
       sim%groups(i)%homma2020_alpha        =  config%homma2020_alpha
       sim%groups(i)%ics_group_idx          =  config%ics_group_idx
+      sim%groups(i)%use_sheath             =  config%use_sheath
+      sim%groups(i)%ics_concentration      =  config%ics_concentration
    
       ! --- Input sanity checks 
       if (len_trim(config%atom_data_suffix) > 0) then

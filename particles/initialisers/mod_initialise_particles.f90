@@ -5,6 +5,7 @@
 !> "initialisers_*.f90" files
 module mod_initialise_particles
   use initialisers_RE
+  use initialisers_ICS
   use initialisers_base
   use phys_module, only: part_group_configs, type_part_group_config, n_part_groups
   use mod_particle_group_id, only: matching_part_config_indices
@@ -34,6 +35,12 @@ module mod_initialise_particles
       !> ics and ncs schemes don't need to initialise particles
       case ('ics', 'ncs')
         if (sim%my_id == 0) write(*,*) " Initialisation skipped for ncs / ics, particles are not all initialised at once"
+      !> initialisation of impurities with density-proportional distribution
+      case ('ics')
+        call initialise_group_ICS(sim, i)
+      !> ncs scheme doesn't need to initialise particles
+      case ('ncs')
+        if (sim%my_id == 0) write(*,*) " Initialisation skipped for ncs, particles are not all initialised at once"
       !> default case - give error
       case default
         if (sim%my_id == 0) write(*,*) "ERROR : No particle coupling scheme selected for group '", part_group_configs(j)%id, "'"
@@ -128,6 +135,39 @@ module mod_initialise_particles
       stop 1
     end select
   end subroutine initialise_group_EP
+
+  subroutine initialise_group_ICS(sim, group_num)
+    use mod_pcg32_rng
+
+    implicit none
+    class(particle_sim), intent(inout) :: sim
+    integer,             intent(in)    :: group_num
+    type(type_part_group_config)       :: config
+    real*8                             :: concentration
+
+    config = part_group_configs(matching_part_config_indices(group_num))
+    concentration = config%ics_concentration
+
+    if (concentration <= 0.d0) then
+      if (sim%my_id == 0) write(*,*) " Initialisation skipped for ics, ics_concentration <= 0,"
+      if (sim%my_id == 0) write(*,*) " particles are not all initialised at once"
+      return
+    end if
+
+    if (concentration >= 1.d0) then
+      if (sim%my_id == 0) write(*,*) " ERROR: ics_concentration must be < 1.0, got ", concentration
+      stop 1
+    end if
+
+    if (sim%my_id == 0) write(*,*) "  Using the 'ics_density_initialization' function, with concentration: ", concentration
+
+    call ics_density_initialization(sim, group_num, concentration)
+
+    if (sim%my_id == 0) then
+      write(*,*) "----- Finished initialisation for group '", config%id, "' with coupling scheme '", config%coupling_scheme, "' -----"
+      write(*,*) ""
+    endif
+  end subroutine initialise_group_ICS
 
 
   !> rejection function to produce EP spatial
