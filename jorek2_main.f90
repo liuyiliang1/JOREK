@@ -418,6 +418,7 @@ mpi_required = 0
 
       ! --- Compute the plasma equilibrium
       if (equil) then
+        call read_eqdsk_equil(my_id,node_list, element_list, bnd_node_list, bnd_elm_list, xpoint, xcase)
         call equilibrium(my_id,node_list,element_list,bnd_node_list,bnd_elm_list,xpoint,xcase, .true.)
         if (export_for_nemec) then
           if(my_id ==0 ) call export_nemec(node_list, element_list, xpoint, xcase)
@@ -561,7 +562,7 @@ write(*,*) "n elements:", element_list%n_elements
   mhd_sim%bnd_elm_list  => bnd_elm_list
 
   ! --- Load deuterium ADAS data if required
-  if (deuterium_adas) ad_deuterium = read_adf11(my_id,'96_h')  
+  if (deuterium_adas) ad_deuterium = read_adf11(my_id,'96_h',adas_dir)  
   
    ! --- Initialize FFTW
 #ifdef USE_FFTW

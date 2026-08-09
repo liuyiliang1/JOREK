@@ -30,7 +30,7 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
   
   ! --- eqdsk variables
   integer          :: nR_eqdsk, nZ_eqdsk, ier
-  real,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
+  real*8,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
   logical          :: normal_eqdsk, normal_eqdsk_wall
   
   ! --- Grid variables
@@ -196,10 +196,12 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
       R_tmp(j) =  R_grid(ii_n(j),jj_n(j))
       Z_tmp(j) =  Z_grid(ii_n(j),jj_n(j))
     enddo
-    
+    if (any(element_list%element(i_elm)%vertex(1:4) .le. 0)) cycle
+
     ! --- vectors
     do j = 1,4
       i_node = element_list%element(i_elm)%vertex(j)
+      if (i_node .le. 0) cycle
       if (node_list%node(i_node)%values(1,1,1) .ne. 0.d0) cycle
       
       ! --- vector u
@@ -244,6 +246,17 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
   enddo
   
 
+
+  ! --- Compact: remove elements with zero vertices (outside limiter)
+  i_elm = 1
+  do while (i_elm .le. element_list%n_elements)
+    if (any(element_list%element(i_elm)%vertex(1:4) .le. 0)) then
+      element_list%element(i_elm) = element_list%element(element_list%n_elements)
+      element_list%n_elements = element_list%n_elements - 1
+    else
+      i_elm = i_elm + 1
+    end if
+  end do
 
   do k=1, element_list%n_elements   ! fill in the size of the elements
     do iv=1,4                       ! loop over the vertices

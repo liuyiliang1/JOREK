@@ -390,9 +390,9 @@ module mod_vacuum_fields
         s1    = sqrt(s21)
         s2    = sqrt(s22)
         s3    = sqrt(s23)
-        al1   = alog((s2+s1+d21)/(s1+s2-d21))
-        al2   = alog((s3+s2+d32)/(s3+s2-d32))
-        al3   = alog((s1+s3+d13)/(s1+s3-d13))
+        al1   = log((s2+s1+d21)/(s1+s2-d21))
+        al2   = log((s3+s2+d32)/(s3+s2-d32))
+        al3   = log((s1+s3+d13)/(s1+s3-d13))
         ar1   = x1*tx3+y1*ty3+z1*tz3
         ar2   = x2*tx1+y2*ty1+z2*tz1
         ar3   = x3*tx2+y3*ty2+z3*tz2
@@ -973,9 +973,9 @@ module mod_vacuum_fields
       s1    = sqrt(s21)
       s2    = sqrt(s22)
       s3    = sqrt(s23)
-      al1   = alog((s2+s1+d21)/(s1+s2-d21))
-      al2   = alog((s3+s2+d32)/(s3+s2-d32))
-      al3   = alog((s1+s3+d13)/(s1+s3-d13))
+      al1   = log((s2+s1+d21)/(s1+s2-d21))
+      al2   = log((s3+s2+d32)/(s3+s2-d32))
+      al3   = log((s1+s3+d13)/(s1+s3-d13))
       ar1   = x1*tx3+y1*ty3+z1*tz3
       ar2   = x2*tx1+y2*ty1+z2*tz1
       ar3   = x3*tx2+y3*ty2+z3*tz2

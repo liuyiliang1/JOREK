@@ -128,6 +128,7 @@ subroutine update_boundary_types(element_list,node_list, across_xpoint)
         exit
       endif
       i_node = element_list%element(i_elm_now)%vertex(i_vertex_now)
+      if (i_node .le. 0) cycle
       if (debug2) write(*,'(A,i6,2f10.3)')'Starting on new element:',i_elm_now
       if (debug2) write(*,'(A,i6,2f10.3)')'On new elm, starting at:',i_node,node_list%node(i_node)%x(1,1,1:2)
       if (elm_sum .eq. 1) node_list%node(i_node)%boundary = 1
@@ -151,6 +152,7 @@ subroutine update_boundary_types(element_list,node_list, across_xpoint)
       endif
       i_node_prev = i_node
       i_node = element_list%element(i_elm_now)%vertex(i_vertex_next)
+      if (i_node .le. 0) cycle
       if (elm_sum .eq. 0) node_list%node(i_node)%boundary = 3
       if (elm_sum .eq. 1) node_list%node(i_node)%boundary = 1
       if (elm_sum .eq. 2) node_list%node(i_node)%boundary = 3

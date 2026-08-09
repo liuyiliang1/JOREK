@@ -80,7 +80,7 @@ contains
         i_tor_min, i_tor_max, aux_nodes)
     endif
     
-    
+    !print *, "direction1=", direction
     ! --- Apply sheath boundary conditions at the targets
     if (bc_natural_open) then
       ! --- Loop over the 4 nodes
@@ -117,6 +117,15 @@ contains
           if (bnd1 .eq. 2) side1 = 3 ; if (bnd2 .eq. 2) side2 = 3
           if (bnd1 .eq.12) side1 = 2 ; if (bnd2 .eq.12) side2 = 2
           if (bnd1 .eq. 4) side1 = 2 ; if (bnd2 .eq. 4) side2 = 2
+          ! type 9 (removed triangle): adopts same side as neighbour, or mod(iv,2) for 9-9
+          if (bnd1 .eq. 9 .and. bnd2 .eq. 9) then
+            if (mod(iv,2) == 1) then; side1 = 2; side2 = 2
+            else;                   side1 = 3; side2 = 3; end if
+          else if (bnd1 .eq. 9) then
+            side1 = side2  ! adopt neighbour's side
+          else if (bnd2 .eq. 9) then
+            side2 = side1  ! adopt neighbour's side
+          end if
           direction(1) = 1
           if     ( (side1 .eq. 2) .or. (side2 .eq. 2) ) then
             direction(2) = 2
@@ -124,12 +133,16 @@ contains
           elseif ( (side1 .eq. 3) .or. (side2 .eq. 3) ) then
             direction(2) = 3
             if (n_order .ge. 5) direction(3) = 6
+          else
+            write(*,'(A,4i8)') 'WARNING: boundary_matrix_open, unknown boundary type ',&
+                               inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary
+            cycle
           endif
           ! --- This should never happen, but just in case...
           if (     ((side1 .eq. 2) .and. (side2 .eq. 3)) &
               .or. ((side1 .eq. 3) .and. (side2 .eq. 2)) ) then
             write(*,'(A,4i8)') 'WARNING: boundary_matrix_open, boundary element incoherent ',&
-                               inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary  
+                               inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary
             cycle
           endif
         else
@@ -160,10 +173,20 @@ contains
             
             direction(2) = 3
             if (n_order .ge. 5) direction(3) = 6
-            
+          
+          elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 9)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 9)) ) then
+
+            direction(2) = 3
+            if (n_order .ge. 5) direction(3) = 6
+
+          elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 5)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 5)) ) then
+
+            direction(2) = 3
+            if (n_order .ge. 5) direction(3) = 6
+
           else
             write(*,'(A,4i8)') 'WARNING: boundary_matrix_open, boundary element not included ',&
-                               inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary  
+                               inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary
             cycle
           endif
         endif
@@ -175,7 +198,6 @@ contains
           write(*,"(A,3I6)") "ERROR: There seems to be an inconsistency in direction(2) in matrix/construct_matrix_mod.f90, (direction(2) / iv / node)=", direction(2),iv,inode1
           !$omp end critical
         end if
-          
 
         ! --- Build matrix elements for boundary
 #if JOREK_MODEL == 183
