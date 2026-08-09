@@ -110,7 +110,7 @@ if (mf .le. 0) then
       if (tht_tmp(i) .lt. 0.d0*pi)    tht_tmp(i) = tht_tmp(i) + 2.d0*pi
 
       tht_i = tht_tmp(i)
-!      if (theta      .lt. 0.5d0*pi)   tht_i = tht_i + 2.d0*pi
+      !if (theta      .lt. 0.5d0*pi)   tht_i = tht_i + 2.d0*pi
 
       r_tmp(i)   = sqrt(rp**2+zp**2)
 

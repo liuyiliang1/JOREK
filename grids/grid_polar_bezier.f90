@@ -148,17 +148,23 @@ do i=1,nr
 
     do m = 2, mf/2
 
-      if (m .eq. 2) then
+      ! if (m .eq. 2) then
+      !   rm   = radius2 * ( fbnd(2*M-1) * cos((M-1)*THTJ)           + fbnd(2*M) * sin((M-1)*THTJ) )
+      !   drm  =           ( fbnd(2*M-1) * cos((M-1)*THTJ)           + fbnd(2*M) * sin((M-1)*THTJ) )
+      !   drmt = radius2 * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ)     + fbnd(2*M) * (M-1)*cos((M-1)*THTJ))
+      !   drmtr=           (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ)     + fbnd(2*M) * (M-1)*cos((M-1)*THTJ))
+      ! else
+      !   rm   =      radius2**(M-1) * ( fbnd(2*M-1) * cos((M-1)*THTJ)       + fbnd(2*M) * sin((M-1)*THTJ) )
+      !   drm  =(M-1)*radius2**(M-2) * ( fbnd(2*M-1) * cos((M-1)*THTJ)       + fbnd(2*M) * sin((M-1)*THTJ) )
+      !   drmt =      radius2**(M-1) * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ) + fbnd(2*M) *(M-1)*cos((M-1)*THTJ))
+      !   drmtr=(M-1)*radius2**(M-2) * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ) + fbnd(2*M) *(M-1)*cos((M-1)*THTJ))
+      ! endif
+      !-----------------------------------------
         rm   = radius2 * ( fbnd(2*M-1) * cos((M-1)*THTJ)           + fbnd(2*M) * sin((M-1)*THTJ) )
         drm  =           ( fbnd(2*M-1) * cos((M-1)*THTJ)           + fbnd(2*M) * sin((M-1)*THTJ) )
         drmt = radius2 * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ)     + fbnd(2*M) * (M-1)*cos((M-1)*THTJ))
         drmtr=           (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ)     + fbnd(2*M) * (M-1)*cos((M-1)*THTJ))
-      else
-        rm   =      radius2**(M-1) * ( fbnd(2*M-1) * cos((M-1)*THTJ)       + fbnd(2*M) * sin((M-1)*THTJ) )
-        drm  =(M-1)*radius2**(M-2) * ( fbnd(2*M-1) * cos((M-1)*THTJ)       + fbnd(2*M) * sin((M-1)*THTJ) )
-        drmt =      radius2**(M-1) * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ) + fbnd(2*M) *(M-1)*cos((M-1)*THTJ))
-        drmtr=(M-1)*radius2**(M-2) * (-fbnd(2*M-1) * (M-1)*sin((M-1)*THTJ) + fbnd(2*M) *(M-1)*cos((M-1)*THTJ))
-      endif
+      !-----------------------------------------
       RR(1,node) = RR(1,node) + amin * rm  * cos(thtj)
       ZZ(1,node) = ZZ(1,node) + amin * rm  * sin(thtj)
       RR(2,node) = RR(2,node) + amin * drm * cos(thtj)

@@ -110,3 +110,9 @@ vendor/
 # macOS
 .DS_Store
 Gemfile.lock
+build_all
+build_all.sh
+build/
+kineticwork/
+particles/examples/
+.vscode/settings.json

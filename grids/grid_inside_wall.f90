@@ -30,7 +30,7 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
   
   ! --- eqdsk variables
   integer          :: nR_eqdsk, nZ_eqdsk, ier
-  real,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
+  real*8,allocatable :: R_eqdsk(:),Z_eqdsk(:),psi_eqdsk(:,:)
   logical          :: normal_eqdsk, normal_eqdsk_wall
   
   ! --- Grid variables
@@ -166,6 +166,7 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
     call create_grid_inside_wall_STEP(nR, nZ, nR_grid, node_index, R_grid, Z_grid, n_elm)
   else
     call create_grid_inside_wall_usual(nR, nZ, nR_grid, node_index, Zlines, R_grid, Z_grid, n_elm)
+    where (R_grid(:, :) < 0.0) R_grid(:, :) = 0.0
   endif
   
   
@@ -320,7 +321,7 @@ subroutine grid_inside_wall(n_R,n_Z,R_begin,R_end,Z_begin,Z_end,boundary,node_li
   enddo
   
   ! --- This is just for debug, it could be removed (or not?)
-  call export_restart(node_list, element_list, 'grid_initial')
+!  call export_restart(node_list, element_list, 'grid_initial')
   
   ! --- Also for debug: Print a python file that plots a cross with the 4 nodes of each element
   if (plot_grid) then
@@ -1014,7 +1015,7 @@ subroutine create_grid_inside_wall_MASTU(nR, nZ, nR_grid, node_index, Zlines, R_
   R_grid   = 0.d0
   Z_grid   = 0.d0
   nR_grid  = 0
-  accuracy = 1.d-5
+  accuracy = 1.d-6
   
   ! --- We cut the domain with horizontal lines
   Rmin = minval(R_wall(1:n_wall))-1.e-3 ; Rmax = maxval(R_wall(1:n_wall))+1.e-3 ! want them slightly outside wall
@@ -1219,7 +1220,7 @@ subroutine create_grid_inside_wall_STEP(nR, nZ, nR_grid, node_index, R_grid, Z_g
   ! --- Initialize local variables
   debug = .false.
 
-  accuracy = +1.d-5
+  accuracy = +1.d-6
   in_section = 0
   node_uo_end = nZ
 
@@ -1529,7 +1530,7 @@ subroutine leg_split_location_step(is_lower, common_z, inner_r, split_r, outer_r
   integer :: i
 
   ! --- Initialize local variables
-  accuracy = +1.d-5
+  accuracy = +1.d-6
 
   ! --- find the limits of the wall
   if (is_lower)        z_limit = minval(Z_wall(1:n_wall)) + 1.e-3  ! slightly inside
@@ -1596,7 +1597,7 @@ subroutine find_divertor_z_values_step(is_lower, split_z, inner_z, outer_z)
   integer :: i
 
   ! --- Initialize local variables
-  accuracy = +1.d-5
+  accuracy = +1.d-6
 
   ! --- find the limits of the wall
   if (is_lower)        outer_z = minval(Z_wall(1:n_wall)) + 1.e-3  ! slightly inside

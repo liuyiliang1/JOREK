@@ -80,7 +80,7 @@ contains
         i_tor_min, i_tor_max, aux_nodes)
     endif
     
-    
+    !print *, "direction1=", direction
     ! --- Apply sheath boundary conditions at the targets
     if (bc_natural_open) then
       ! --- Loop over the 4 nodes
@@ -160,6 +160,11 @@ contains
             
             direction(2) = 3
             if (n_order .ge. 5) direction(3) = 6
+          
+          elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 9)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 9)) ) then
+            
+            direction(2) = 3
+            if (n_order .ge. 5) direction(3) = 6
             
           else
             write(*,'(A,4i8)') 'WARNING: boundary_matrix_open, boundary element not included ',&
@@ -175,7 +180,6 @@ contains
           write(*,"(A,3I6)") "ERROR: There seems to be an inconsistency in direction(2) in matrix/construct_matrix_mod.f90, (direction(2) / iv / node)=", direction(2),iv,inode1
           !$omp end critical
         end if
-          
 
         ! --- Build matrix elements for boundary
 #if JOREK_MODEL == 183

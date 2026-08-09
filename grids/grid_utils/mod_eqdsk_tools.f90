@@ -291,6 +291,7 @@ subroutine get_data_from_eqdsk(normal_eqdsk, normal_eqdsk_wall, nR, nZ, R_grid, 
   
   ! --- reading psi-map
   if (normal_eqdsk) then
+    !write(*,*) 'Reading psi-map in normal eqdsk format...'
     read(5,'(5e16.9)') ((psirz(i,j),i=1,nr),j=1,nz)
   else
     do k=1,nz
@@ -382,6 +383,7 @@ subroutine interpolate_psi_from_eqdsk_grid(nr_eqdsk, nz_eqdsk, xx, yy, psirz, R_
   ! --- Check bounds
   if ( (R_find .gt. maxval(xx)) .or. (R_find .lt. minval(xx)) ) then
     write(*,*)'Warning, asking for point outside eqdsk grid, this should not happen...'
+    write(*,*)'R_find = ', R_find, ' but should be between ', minval(xx), ' and ', maxval(xx)
     psi = 0.d0 ; psi_R = 0.d0 ; psi_Z = 0.d0
     return
   endif
@@ -389,6 +391,7 @@ subroutine interpolate_psi_from_eqdsk_grid(nr_eqdsk, nz_eqdsk, xx, yy, psirz, R_
   ! --- Check bounds
   if ( (Z_find .gt. maxval(yy)) .or. (Z_find .lt. minval(yy)) ) then
     write(*,*)'Warning, asking for point outside eqdsk grid, this should not happen...'
+    write(*,*)'Z_find = ', Z_find, ' but should be between ', minval(yy), ' and ', maxval(yy)
     psi = 0.d0 ; psi_R = 0.d0 ; psi_Z = 0.d0
     return
   endif
