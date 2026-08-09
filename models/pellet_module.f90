@@ -444,7 +444,7 @@ module pellet_module
             case('Ar')
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if
@@ -465,7 +465,7 @@ module pellet_module
             case('Ne')
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if
@@ -530,7 +530,7 @@ module pellet_module
             case('Ne')  ! Neond and H2/D2 mixed together
               if (T_eV >= 1.) then
                 ! As with element_matrix, mimick density as 1.d20
-                call imp_cor(index_main_imp)%interp(density=20.,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
+                call imp_cor(index_main_imp)%interp(density=20.d0,temperature=log10(T_eV*EL_CHG/K_BOLTZ),z_out=Z_imp)
               else
                 Z_imp = 0.
               end if

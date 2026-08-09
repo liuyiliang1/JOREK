@@ -49,8 +49,8 @@ real*8, dimension (DIM0)       :: RHS
 
 logical, intent(in), optional  :: get_terms 
 
-integer    :: i, j, ms, mt, mp, k, l, index_ij, index_kl, index, index_k, index_m, m, ik, xcase2
-integer    :: n_tor_start, n_tor_end, n_tor_local, n_tor_loop
+integer    :: i, j, jn, ms, mt, mp, k, l, index_ij, index_kl, index, index_k, index_m, m, ik, xcase2
+integer    :: n_tor_start, n_tor_end, n_tor_local, n_tor_loop, iv
 integer    :: in, im, ij1, ij2, ij3, ij4, ij5, ij6, ij7, ij8, kl1, kl2, kl3, kl4, kl5, kl6, kl7, kl8, ij, kl
 real*8     :: wst, xjac, xjac_s, xjac_t, xjac_x, xjac_y, BigR, r2, phi, delta_phi
 real*8     :: current_source(n_gauss,n_gauss),particle_source(n_gauss,n_gauss),heat_source(n_gauss,n_gauss),heat_source_i(n_gauss,n_gauss),heat_source_e(n_gauss,n_gauss)
@@ -105,6 +105,8 @@ real*8     :: Vpar0, Vpar0_s, Vpar0_t, Vpar0_p, Vpar0_x, Vpar0_y, Vpar0_ss, Vpar
 real*8     :: BigR_x, vv2, eta_T, visco_T, deta_dT, d2eta_d2T, dvisco_dT, d2visco_dT2, visco_num_T, eta_num_T, W_dia, W_dia_rho, W_dia_Ti
 real*8     :: visco_T_heating, dvisco_dT_heating, d2visco_dT2_heating
 real*8     :: eta_T_ohm, deta_dT_ohm, d2eta_d2T_ohm, deta_num_dT,  dvisco_num_dT, D_perp_num_psin, ZK_perp_num_psin, ZK_i_perp_num_psin, ZK_e_perp_num_psin
+real*8     :: h_elem, d_lower, d_upper, d_xp, d0_xp, w_xp  ! X-point eta_num modulation
+real*8     :: R_el_min, R_el_max, Z_el_min, Z_el_max, Rv, Zv
 real*8     :: deta_dr0, deta_drimp0, deta_dr0_ohm, deta_drimp0_ohm
 real*8     :: lnA, dlnA_dT, d2lnA_dT2, dlnA_dr0, dlnA_drimp0
 real*8     :: Ti0_ps0_x, Ti_ps0_x, Ti0_psi_x, Ti0_ps0_y, Ti_ps0_y, Ti0_psi_y, v_ps0_x, v_psi_x, v_ps0_y, v_psi_y
@@ -211,6 +213,10 @@ real*8     :: visco_fact_old, visco_fact_new
 real*8     :: aux_rho0, aux_E0, aux_mom_par0
 real*8     :: aux_E0_Ti, aux_E0_Te
 real*8     :: aux_P_par_re, aux_P_perp_re, aux_jre, aux_jre_ind
+! --- ICS impurity auxiliary variables (sum_q = charge density, sum_q2 = charge squared for Z_eff)
+real*8     :: aux_imp_q, aux_zeff, aux_imp_n
+real*8     :: aux_imp_q_s, aux_imp_q_t, aux_imp_n_s, aux_imp_n_t
+real*8     :: aux_imp_q_x, aux_imp_q_y, aux_imp_n_x, aux_imp_n_y
 
 ! --- Full pressure tensor coupling variables 
 real*8     :: aux_PIRR, aux_PIRR_s, aux_PIRR_t, aux_PIRR_R, aux_PIRR_Z,aux_PIRR_p
@@ -345,6 +351,9 @@ eq_zT           = 0.d0
 aux_rho0  = 0.d0; aux_E0    = 0.d0; aux_mom_par0 = 0.d0
 aux_E0_Ti = 0.d0; aux_E0_Te = 0.d0;
 aux_P_par_re = 0.d0; aux_P_perp_re = 0.d0; aux_jre = 0.d0; aux_jre_ind = 0.d0
+aux_imp_q = 0.d0; aux_zeff = 0.d0; aux_imp_n = 0.d0
+aux_imp_q_s = 0.d0; aux_imp_q_t = 0.d0; aux_imp_n_s = 0.d0; aux_imp_n_t = 0.d0
+aux_imp_q_x = 0.d0; aux_imp_q_y = 0.d0; aux_imp_n_x = 0.d0; aux_imp_n_y = 0.d0
 
 ! --- full pressure tensor coupling terms
 aux_PIRR = 0.d0; aux_PIRR_s = 0.d0; aux_PIRR_t = 0.d0; aux_PIRR_R = 0.d0; aux_PIRR_Z = 0.d0; aux_PIRR_p = 0.d0
@@ -730,6 +739,18 @@ do i=1,n_vertex_max
               aux_E0 = eq_aux_g(mp,E_idx_kin,ms,mt)
 #endif
               aux_mom_par0 = eq_aux_g(mp,mom_par_idx_kin,ms,mt)
+              !> read impurity charge density and zeff from aux variables (for Z_eff -> resistivity)
+              if (use_ics) then
+                do jn=1, n_ics
+                  aux_imp_q = aux_imp_q + max(eq_aux_g(mp,ics_indices_kin(jn),ms,mt), 0.d0)
+                  aux_zeff  = aux_zeff  + max(eq_aux_g(mp,zeff_indices_kin(jn),ms,mt), 0.d0)
+                  aux_imp_q_s = aux_imp_q_s + eq_aux_s(mp,ics_indices_kin(jn),ms,mt)
+                  aux_imp_q_t = aux_imp_q_t + eq_aux_t(mp,ics_indices_kin(jn),ms,mt)
+                enddo
+                aux_imp_n   = max(eq_aux_g(mp,8,ms,mt), 0.d0)
+                aux_imp_n_s = eq_aux_s(mp,8,ms,mt)
+                aux_imp_n_t = eq_aux_t(mp,8,ms,mt)
+              endif
           end if
 
           !> kinetic runaway electrons 
@@ -1111,10 +1132,30 @@ do i=1,n_vertex_max
             
           end if ! (with_TiTe) *********************************************************************
 
-          if (.not. with_impurities) then
+          if (.not. with_impurities .and. .not. use_ics) then
             Z_eff       = 1.d0
             alpha_e     = 0.d0
             dalpha_e_dT = 0.d0
+            dZ_eff_dT     = 0.d0
+            dZ_eff_dr0    = 0.d0
+            dZ_eff_drimp0 = 0.d0
+          elseif (use_ics) then
+            !> compute Z_eff from kinetic impurity contribution (read from aux variables)
+            !> compute Z_eff from kinetic impurity contribution (values in JOREK units)
+            Z_eff = max(r0_corr, 0.d0) + aux_zeff
+            Z_eff = Z_eff / max((max(r0_corr, 0.d0) + aux_imp_q), 1.d-10)
+            Z_eff = max(Z_eff, 1.d0)
+            !> for now, keep alpha_e = 0 (no fluid impurity density correction to n_e)
+            alpha_e     = 0.d0
+            dalpha_e_dT = 0.d0
+            !> Z_eff derivatives are set to zero since kinetic impurity projection
+            !> does not provide analytical derivatives w.r.t. T, rho, rho_imp.
+            !> Without this initialization, these variables carry undefined stack
+            !> values into resistivity(), corrupting the Jacobian matrix and
+            !> causing current instability, especially near the X-point.
+            dZ_eff_dT     = 0.d0
+            dZ_eff_dr0    = 0.d0
+            dZ_eff_drimp0 = 0.d0
           endif
 
 
@@ -1150,10 +1191,34 @@ do i=1,n_vertex_max
           psi_norm = get_psi_n( ps0, y_g(ms,mt))
           
           ! --- Hyper-resistivity
-          call hyper_resistivity(T_or_Te, T_or_Te_corr, T_or_Te_0, psi_norm, eta_num_T, deta_num_dT) 
-          
+          call hyper_resistivity(T_or_Te, T_or_Te_corr, T_or_Te_0, psi_norm, eta_num_T, deta_num_dT)
+
+          ! --- X-point localized hyper-resistivity enhancement
+          if (eta_num_xpoint_dependent) then
+            ! Element size from bounding-box half-diagonal (robust for stretched grids)
+            R_el_min = huge(0.d0); R_el_max = -huge(0.d0)
+            Z_el_min = huge(0.d0); Z_el_max = -huge(0.d0)
+            do iv = 1, n_vertex_max
+              Rv = nodes(iv)%x(1,1,1)
+              Zv = nodes(iv)%x(1,1,2)
+              if (Rv < R_el_min) R_el_min = Rv
+              if (Rv > R_el_max) R_el_max = Rv
+              if (Zv < Z_el_min) Z_el_min = Zv
+              if (Zv > Z_el_max) Z_el_max = Zv
+            enddo
+            h_elem = 0.5d0 * sqrt((R_el_max - R_el_min)**2 + (Z_el_max - Z_el_min)**2)
+            ! Distance to lower and upper X-points
+            d_lower = sqrt((x_g(ms,mt) - R_xpoint(1))**2 + (y_g(ms,mt) - Z_xpoint(1))**2)
+            d_upper = sqrt((x_g(ms,mt) - R_xpoint(2))**2 + (y_g(ms,mt) - Z_xpoint(2))**2)
+            d_xp = min(d_lower, d_upper)
+            ! Smooth tanh profile, slightly generous to safely cover leg region
+            d0_xp = 5.0d0 * h_elem
+            w_xp  = 2.0d0 * h_elem
+            eta_num_T = eta_num_T + eta_num_xpoint * 0.5d0 * (1.d0 - tanh((d_xp - d0_xp) / w_xp))
+          endif
+
           ! --- Hyper-viscosity
-          call hyper_viscosity(T_or_Te, T_or_Te_corr, T_or_Te_0, visco_num_T, dvisco_num_dT) 
+          call hyper_viscosity(T_or_Te, T_or_Te_corr, T_or_Te_0, visco_num_T, dvisco_num_dT)
 
           ! --- Diamagnetic viscosity
           if (Wdia) then
@@ -1672,6 +1737,7 @@ do i=1,n_vertex_max
                        - tgnum_rho * 0.25d0 / BigR * vpar0**2 &
                                  * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                              &
                                  * (                            + F0 / BigR * v_p) * xjac * tstep * tstep        * factor(var_rho,12) 
+
 
             !###################################################################################################
             !#  Parallel Velocity Equation                                                                     #
@@ -5346,7 +5412,7 @@ subroutine construct_imp_charge_states()
 
   if (allocated(imp_adas(1)%ionisation_energy)) then
 
-     call imp_cor(1)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
+     call imp_cor(1)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
           p_out=P_imp,p_Te_out=dP_imp_dT,z_avg=Z_imp,z_avg_Te=dZ_imp_dT,                     &
           z_avg_TeTe=d2Z_imp_dT2)
 
@@ -5370,7 +5436,7 @@ subroutine construct_imp_charge_states()
 
   else
 
-     call imp_cor(1)%interp_linear(density=20.,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
+     call imp_cor(1)%interp_linear(density=20.d0,temperature=log10(Te_corr_eV*EL_CHG/K_BOLTZ), &
           p_out=P_imp,p_Te_out=dP_imp_dT,                                                    &
           z_avg=Z_imp,z_avg_Te=dZ_imp_dT,z_avg_TeTe=d2Z_imp_dT2)
 

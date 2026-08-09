@@ -164,7 +164,7 @@ if (my_id == 0) then
       if (abs(ES%psi_xpoint(1)-ES%psi_xpoint(2)) .ge. SDN_threshold) then
         ! --- Project psi to enforce up/down symmetry
         call Poisson(0,0,node_list,element_list,bnd_node_list,bnd_elm_list, var_psi,var_psi,1, &
-                     0.0,1.0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
+                     0.d0,1.d0,.true.,xcase,ES%Z_xpoint,.false.,.false.,1)
         call update_equil_state(my_id,node_list, element_list, bnd_elm_list, xpoint, xcase)
       end if
     end if
@@ -768,3 +768,113 @@ equil_initialized = .true.
 
 return
 end subroutine equilibrium
+
+
+
+subroutine read_eqdsk_equil(my_id, node_list, element_list, bnd_node_list, bnd_elm_list, xpoint, xcase)
+  !-----------------------------------------------------------------------
+  ! Read an equilibrium from an EQDSK file and fill psi and its derivatives
+  ! on the computational grid.
+  !-----------------------------------------------------------------------
+  use tr_module
+  use mod_parameters
+  use data_structure
+  use phys_module, only: manipulate_psi_map
+  use mod_model_settings
+  use mod_eqdsk_tools
+  use mpi_mod
+  implicit none
+
+  ! --- Routine parameters
+  integer,                      intent(in)    :: my_id
+  type(type_node_list),         intent(inout) :: node_list
+  type(type_element_list),      intent(inout) :: element_list
+  type(type_bnd_node_list),     intent(inout) :: bnd_node_list
+  type(type_bnd_element_list),  intent(inout) :: bnd_elm_list
+  logical,                      intent(in)    :: xpoint
+  integer,                      intent(in)    :: xcase
+
+  ! --- Local variables
+  integer          :: nR_eqdsk, nZ_eqdsk, n_wall, ier, i, j, k
+  real*8, allocatable :: R_eqdsk(:), Z_eqdsk(:), psi_eqdsk(:,:)
+  real*8, allocatable :: R_wall(:), Z_wall(:)
+  logical          :: normal_eqdsk, normal_eqdsk_wall
+  real*8           :: psi, psi_R, psi_Z
+  real*8           :: amp, Rm, Zm, dRm, dZm, dPsi, RR, ZZ
+
+  if (my_id == 0) then
+    write(*,*) '***************************************'
+    write(*,*) '*         read_eqdsk_equil            *'
+    write(*,*) '***************************************'
+  endif
+
+  ! --- 1. Read EQDSK file
+  call get_eqdsk_style(normal_eqdsk, normal_eqdsk_wall, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot open EQDSK file'
+    stop
+  endif
+
+  call get_eqdsk_dimensions(normal_eqdsk, nR_eqdsk, nZ_eqdsk, n_wall, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot get EQDSK dimensions'
+    stop
+  endif
+
+  allocate(R_eqdsk(nR_eqdsk), Z_eqdsk(nZ_eqdsk), psi_eqdsk(nR_eqdsk, nZ_eqdsk))
+  allocate(R_wall(n_wall), Z_wall(n_wall))
+
+  call get_data_from_eqdsk(normal_eqdsk, normal_eqdsk_wall, &
+       nR_eqdsk, nZ_eqdsk, R_eqdsk, Z_eqdsk, psi_eqdsk, &
+       n_wall, R_wall, Z_wall, ier)
+  if (ier /= 0) then
+    write(*,*) 'ERROR in read_eqdsk_equil: cannot read EQDSK data'
+    stop
+  endif
+
+  deallocate(R_wall, Z_wall)
+
+  ! --- 2. Manipulate psi from eqdsk (same as in grid_inside_wall)
+  do i = 1, nR_eqdsk
+    RR = R_eqdsk(i)
+    do j = 1, nZ_eqdsk
+      ZZ = Z_eqdsk(j)
+      dPsi = 0.d0
+      do k = 1, 5
+        amp = manipulate_psi_map(k,1)
+        Rm  = manipulate_psi_map(k,2)
+        Zm  = manipulate_psi_map(k,3)
+        dRm = manipulate_psi_map(k,4)
+        dZm = manipulate_psi_map(k,5)
+        dPsi = dPsi + amp * exp(-(RR-Rm)**2/dRm**2 - (ZZ-Zm)**2/dZm**2)
+      end do
+      psi_eqdsk(i,j) = psi_eqdsk(i,j) + dPsi
+    end do
+  end do
+
+  ! --- 3. Interpolate psi and its derivatives onto the computational grid
+  do i = 1, node_list%n_nodes
+    call interpolate_psi_from_eqdsk_grid( &
+         nR_eqdsk, nZ_eqdsk, R_eqdsk, Z_eqdsk, psi_eqdsk, &
+         node_list%node(i)%x(1,1,1), node_list%node(i)%x(1,1,2), &
+         psi, psi_R, psi_Z)
+
+    node_list%node(i)%values(1,1,var_psi) = psi
+
+    node_list%node(i)%values(1,2,var_psi) = &
+         psi_R * node_list%node(i)%x(1,2,1) + &
+         psi_Z * node_list%node(i)%x(1,2,2)
+    node_list%node(i)%values(1,3,var_psi) = &
+         psi_R * node_list%node(i)%x(1,3,1) + &
+         psi_Z * node_list%node(i)%x(1,3,2)
+    node_list%node(i)%values(1,4,var_psi) = 0.d0  ! set to zero (consistent with grid_inside_wall)
+  enddo
+
+  ! --- 4. Clean up
+  deallocate(R_eqdsk, Z_eqdsk, psi_eqdsk)
+
+  if (my_id == 0) then
+    write(*,*) 'EQDSK equilibrium read successfully.'
+  endif
+
+end subroutine read_eqdsk_equil

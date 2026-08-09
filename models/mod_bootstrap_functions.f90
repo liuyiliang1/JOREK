@@ -1,5 +1,6 @@
 module mod_bootstrap_functions
 
+  use mpi
   implicit none
   integer, parameter :: n_spline = 30
   real*8             :: q_spline(n_spline), ft_spline(n_spline), B_spline(n_spline)
@@ -101,11 +102,13 @@ subroutine bootstrap_current(R, Z,                           &
   Ti    = corr_neg_temp(Ti0)
   Ti    = Ti    / (MU_ZERO*rho_norm)
   Ti_eV = Ti    / 1.6021765d-19
+  Ti_eV = max(Ti_eV, 1.d-3) ! guard against zero temperature
   Ti_x  = Ti0_x / (MU_ZERO*rho_norm)
   Ti_y  = Ti0_y / (MU_ZERO*rho_norm)
   Te    = corr_neg_temp(Te0)
   Te    = Te    / (MU_ZERO*rho_norm)
   Te_eV = Te    / 1.6021765d-19
+  Te_eV = max(Te_eV, 1.d-3) ! guard against zero temperature
   Te_x  = Te0_x / (MU_ZERO*rho_norm)
   Te_y  = Te0_y / (MU_ZERO*rho_norm)
   T     = Ti + Te
@@ -138,7 +141,7 @@ subroutine bootstrap_current(R, Z,                           &
   dP_dpsi   = rho*dT_dpsi  + drho_dpsi*T
         
   ! --- Inverse aspect ratio
-  eps = minRad / R_axis
+  eps = max(minRad, 1.d-6) / R_axis
         
   ! --- Ion Charge
   ZZ = 1
@@ -262,6 +265,7 @@ subroutine bootstrap_find_minRad(my_id, node_list, element_list, R_axis, Z_axis,
   integer			:: i_elm_find(8),i_find
   real*8			:: psi, psi_norm, psi_s,psi_t,psi_st,psi_ss,psi_tt
   logical			:: found
+  integer           :: ierr
 
   ! --- Simplest case when we have a limiter plasma
   if (.not. xpoint) then
@@ -351,7 +355,13 @@ subroutine bootstrap_find_minRad(my_id, node_list, element_list, R_axis, Z_axis,
     flux_list%psi_values(1) = psi_bnd
     call find_flux_surfaces(my_id,xpoint,xcase,node_list,element_list,flux_list)
     call find_theta_surface(node_list, element_list, flux_list, 1, 0.0, R_axis, Z_axis,i_elm_find,s_find,t_find,i_find)
-    call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),R_find,Z_find)
+    if (i_find == 0) then
+      R_find = R_axis
+      Z_find = Z_axis
+    else
+      call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),R_find,Z_find)
+    end if
+    call MPI_AllReduce(MPI_IN_PLACE, R_find, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierr)
     call tr_deallocate(flux_list%psi_values,"flux_list%psi_values",CAT_GRID)
     minRad = R_find - R_axis
   else

@@ -515,10 +515,18 @@ elseif (itype .eq. 4) then
         elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 3)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 3)) ) then
           
           direction = (/  1, 3  /)
-          
+
+        elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 9)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 9)) ) then
+
+          direction = (/  1, 3  /)
+
+        elseif (  ((bnd1 .eq. 2) .or. (bnd1 .eq. 5)) .and. ((bnd2 .eq. 2) .or. (bnd2 .eq. 5)) ) then
+
+          direction = (/  1, 3  /)
+
         else
           write(*,'(A,4i8)') 'WARNING: boundary_matrix_open, boundary element not included ',&
-                             inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary  
+                             inode1,node_list%node(inode1)%boundary,inode2,node_list%node(inode2)%boundary
           cycle
         endif
     

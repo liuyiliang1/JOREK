@@ -84,6 +84,7 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 ZK_perp_num, ZK_perp_num_tanh,                      &
                 ZK_perp_num_tanh_psin, ZK_perp_num_tanh_sig,        &
                 eta_num_T_dependent, visco_num_T_dependent,         &
+                eta_num_xpoint_dependent, eta_num_xpoint,             &
                 Dn_perp_num, time_evol_scheme,                      &
                 ZK_i_perp_num, ZK_i_perp_num_tanh,                  &
                 ZK_i_perp_num_tanh_psin, ZK_i_perp_num_tanh_sig,    &
