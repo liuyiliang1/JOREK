@@ -1,5 +1,6 @@
 module mod_bootstrap_functions
 
+  use mpi
   implicit none
   integer, parameter :: n_spline = 30
   real*8             :: q_spline(n_spline), ft_spline(n_spline), B_spline(n_spline)
@@ -262,6 +263,7 @@ subroutine bootstrap_find_minRad(my_id, node_list, element_list, R_axis, Z_axis,
   integer			:: i_elm_find(8),i_find
   real*8			:: psi, psi_norm, psi_s,psi_t,psi_st,psi_ss,psi_tt
   logical			:: found
+  integer           :: ierr
 
   ! --- Simplest case when we have a limiter plasma
   if (.not. xpoint) then
@@ -351,7 +353,13 @@ subroutine bootstrap_find_minRad(my_id, node_list, element_list, R_axis, Z_axis,
     flux_list%psi_values(1) = psi_bnd
     call find_flux_surfaces(my_id,xpoint,xcase,node_list,element_list,flux_list)
     call find_theta_surface(node_list, element_list, flux_list, 1, 0.0, R_axis, Z_axis,i_elm_find,s_find,t_find,i_find)
-    call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),R_find,Z_find)
+    if (i_find == 0) then
+      R_find = R_axis
+      Z_find = Z_axis
+    else
+      call interp_RZ(node_list,element_list,i_elm_find(1),s_find(1),t_find(1),R_find,Z_find)
+    end if
+    call MPI_AllReduce(MPI_IN_PLACE, R_find, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierr)
     call tr_deallocate(flux_list%psi_values,"flux_list%psi_values",CAT_GRID)
     minRad = R_find - R_axis
   else
@@ -1258,6 +1266,78 @@ return
 end subroutine bootstrap_current_wilson
 
 
+
+!=======================================================================
+!> Inverse q-profile lookup: find psi_n where q(psi_n) = q_target
+!!
+!! Uses the module-level psi_knots and q_knots arrays (filled by
+!! bootstrap_get_q_and_ft_splines).  Returns psi_n via linear
+!! interpolation.  Returns -1.d0 if the q-profile is not available
+!! or the target q is outside the profile range.
+function get_psi_n_from_q(q_target) result(psi_n)
+  implicit none
+  real*8, intent(in) :: q_target
+  real*8 :: psi_n
+  integer :: i
+  logical :: initialized
+
+  psi_n = -1.d0
+
+  ! Check if q-profile has been filled (any non-zero q_knots)
+  initialized = .false.
+  do i = 1, n_spline
+    if (abs(q_knots(i)) > 1.d-12) initialized = .true.
+  end do
+  if (.not. initialized) return
+
+  ! Search for the interval bracketing abs(q_target).
+  ! Use abs() because q-profile may be negative (psi decreasing axis->boundary).
+  do i = 2, n_spline
+    if (abs(q_knots(i-1)) < 1.d-12 .or. abs(q_knots(i)) < 1.d-12) cycle
+    if (abs(q_knots(i-1)) <= abs(q_target) .and. abs(q_target) <= abs(q_knots(i))) then
+      psi_n = psi_knots(i-1) + (abs(q_target) - abs(q_knots(i-1))) &
+            * (psi_knots(i) - psi_knots(i-1)) &
+            / (abs(q_knots(i)) - abs(q_knots(i-1)))
+      return
+    end if
+  end do
+end function get_psi_n_from_q
+
+!=======================================================================
+!> Compute dq/dpsi_n at a given psi_n using the q-profile spline knots.
+!! Uses central finite difference on the q_knots / psi_knots arrays.
+function get_dq_dpsi(psi_n) result(dq)
+  implicit none
+  real*8, intent(in) :: psi_n
+  real*8 :: dq, delta
+  integer :: i
+
+  dq = 0.d0
+  ! Find the nearest knot interval
+  do i = 2, n_spline - 1
+    if (abs(psi_knots(i)) < 1.d-12 .and. abs(psi_knots(i+1)) < 1.d-12) cycle
+    if (abs(psi_n) >= abs(psi_knots(i)) .and. abs(psi_n) <= abs(psi_knots(i+1))) then
+      ! Central or one-sided difference
+      if (i > 1 .and. abs(psi_knots(i-1)) > 1.d-12) then
+        delta = abs(psi_knots(i+1)) - abs(psi_knots(i-1))
+      else
+        delta = abs(psi_knots(i+1)) - abs(psi_knots(i))
+      end if
+      if (abs(delta) > 1.d-12) then
+        dq = (abs(q_knots(i+1)) - abs(q_knots(i-1))) / delta
+        if (i == 1) dq = (abs(q_knots(i+1)) - abs(q_knots(i))) / (abs(psi_knots(i+1)) - abs(psi_knots(i)))
+      end if
+      return
+    end if
+  end do
+  ! Fallback: use first/last valid interval
+  do i = 2, n_spline
+    if (abs(q_knots(i)-q_knots(i-1)) > 1.d-12 .and. abs(psi_knots(i)-psi_knots(i-1)) > 1.d-12) then
+      dq = abs(q_knots(i) - q_knots(i-1)) / abs(psi_knots(i) - psi_knots(i-1))
+      return
+    end if
+  end do
+end function get_dq_dpsi
 
 end module mod_bootstrap_functions
 

@@ -21,8 +21,8 @@ integer :: ierr, err, i
 namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 rst_hdf5, rst_hdf5_version, keep_current_prof,      &
                 restart, regrid, write_ps, time_evol_theta,         &
-                regrid_from_rz, force_horizontal_Xline,             &
-                time_evol_zeta,                                     &
+                regrid_from_rz,                                     &
+                time_evol_zeta, force_horizontal_Xline,             &
                 Mach1_openBC, thermalization, Mach1_fix_B,          &
                 eta_ARAZ_const, eta_ARAZ_on, eta_ARAZ_simple,       & 
                 tauIC_ARAZ_on,                                      &
@@ -32,7 +32,6 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 n_outer, n_inner, n_up_priv, n_up_leg, n_up_leg_out,&
                 n_tht_equidistant,                                  &
                 psi_axis_init, XR_r, SIG_r, XR_tht, SIG_tht,        &
-                xr_closed,                                          &
                 SIG_closed, SIG_open, SIG_private, SIG_theta,       &
                 SIG_leg_0, SIG_leg_1, dPSI_open, dPSI_private,      &
                 SIG_up_leg_0, SIG_up_leg_1, SIG_up_priv,            &
@@ -120,7 +119,8 @@ namelist /in1/  tstep, nstep, tstep_n, nstep_n,                     &
                 spi_tor_rot, tor_frequency, spi_num_vol,            &
                 NEO, neo_file, aki_neo_const, amu_neo_const,        &
                 num_seed_islands, seed_amplitude, seed_psin,       &
-                seed_n_tor, seed_width,                            &
+                seed_n_tor, seed_width, seed_m_pol, seed_q,       &
+                seed_continuous, seed_ramp_steps,                  &
                 D_neutral_x, D_neutral_y, D_neutral_p,              &
                 neutral_reflection,                                 &
                 ns_deltaphi, ns_delta_minor_rad, ksi_ion, spi_rnd_seed, &

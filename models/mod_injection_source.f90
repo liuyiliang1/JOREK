@@ -2,9 +2,9 @@ module mod_injection_source
 
   use constants
 
-  real*8 :: total_n_particles_inj     = 0.
-  real*8 :: total_n_particles         = 0.
-  real*8 :: total_n_particles_inj_all = 0.
+  real*8 :: total_n_particles_inj     = 0.d0
+  real*8 :: total_n_particles         = 0.d0
+  real*8 :: total_n_particles_inj_all = 0.d0
 
   contains 
 
@@ -114,6 +114,12 @@ module mod_injection_source
       case('Ne')
         n_gas  = 3
         A_gas  = 20.
+        mol_atom = 1.
+        mass_gas = A_gas*ATOMIC_MASS_UNIT
+        c0_gas = sqrt(8.3145d0*293.d0/(A_gas*1.d-3)*(5.d0/3.d0))
+      case('B')
+        n_gas  = 3
+        A_gas  = 11.
         mol_atom = 1.
         mass_gas = A_gas*ATOMIC_MASS_UNIT
         c0_gas = sqrt(8.3145d0*293.d0/(A_gas*1.d-3)*(5.d0/3.d0))
@@ -359,7 +365,7 @@ module mod_injection_source
             call inj_source(pellets(spi_i)%spi_abl,pellets(spi_i)%spi_R,pellets(spi_i)%spi_Z,pellets(spi_i)%spi_phi, &
                           pellets(spi_i)%spi_psi,pellets(spi_i)%spi_grad_psi, &
                           ns_radius_loc,ns_deltaphi,ns_delta_minor_rad,ns_tor_norm, &
-                          A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0., R, Z, phi, psi, &
+                          A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.d0, R, Z, phi, psi, &
                           source_tmp,t_now,JET_MGI,ASDEX_MGI,central_density,central_mass,spi_vol_tmp,i_main_imp)
 
             if (present(source_background_drift_arr) .or. present(source_impurity_drift_arr)) then
@@ -368,7 +374,7 @@ module mod_injection_source
                   call inj_source(pellets(spi_i)%spi_abl,pellets(spi_i)%spi_R+drift_distance(i_inj),pellets(spi_i)%spi_Z,pellets(spi_i)%spi_phi, &
                               pellets(spi_i)%spi_psi_drift,pellets(spi_i)%spi_grad_psi_drift, &
                               ns_radius_loc,ns_deltaphi,ns_delta_minor_rad,ns_tor_norm, &
-                              A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0., R, Z, phi, psi, &
+                              A_Dmv,K_Dmv,V_Dmv,P_Dmv,t_ns(i_inj),0.d0, R, Z, phi, psi, &
                               source_tmp_drift,t_now,JET_MGI,ASDEX_MGI,central_density,central_mass,spi_vol_tmp_drift,i_main_imp) 
 
                 else

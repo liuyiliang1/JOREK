@@ -99,6 +99,11 @@ real*8     :: Up0,  Up0_R,  Up0_Z,  Up0_p,  Up0_s,  Up0_t,  Up0_ss,  Up0_st,  Up
 real*8     :: rho0, rho0_R, rho0_Z, rho0_p, rho0_s, rho0_t, rho0_ss, rho0_st, rho0_tt, rho0_RR, rho0_ZZ, rho0_RZ, rho0_pp, rho0_corr
 real*8     :: rhon0,rhon0_R,rhon0_Z,rhon0_p,rhon0_s,rhon0_t,rhon0_ss,rhon0_st,rhon0_tt,rhon0_RR,rhon0_ZZ,rhon0_RZ,rhon0_pp,rhon0_corr
 real*8     :: rhoimp0,rhoimp0_R,rhoimp0_Z,rhoimp0_p,rhoimp0_s,rhoimp0_t,rhoimp0_ss,rhoimp0_st,rhoimp0_tt,rhoimp0_RR,rhoimp0_ZZ,rhoimp0_RZ,rhoimp0_pp,rhoimp0_corr
+
+  ! --- ECCD-like seed island current
+  real*8     :: jseed0
+  real*8     :: jseed
+  real*8     :: seed_source_val                                       !< seed current source at this Gauss point
 real*8     :: T0,  T0_R,  T0_Z,  T0_p,  T0_s,  T0_t,  T0_ss,  T0_st, T0_tt,  T0_RR,  T0_ZZ,  T0_RZ,  T0_pp,  T0_corr
 real*8     :: Ti0,  Ti0_R,  Ti0_Z,  Ti0_p,  Ti0_s,  Ti0_t,  Ti0_ss,  Ti0_st,  Ti0_tt,  Ti0_RR,  Ti0_ZZ,  Ti0_RZ,  Ti0_pp,  Ti0_corr
 real*8     :: Te0,  Te0_R,  Te0_Z,  Te0_p,  Te0_s,  Te0_t,  Te0_ss,  Te0_st,  Te0_tt,  Te0_RR,  Te0_ZZ,  Te0_RZ,  Te0_pp,  Te0_corr
@@ -1254,6 +1259,12 @@ do i=1,n_vertex_max
                          + rhoimp0_t * (x_st(ms,mt)*x_s(ms,mt) - x_ss(ms,mt)*x_t(ms,mt) )   )/ xjac**2   &
                          - rhoimp0_Z * xjac_Z / xjac
             rhoimp0_pp   = eq_pp(mp,var_rhoimp,ms,mt)
+
+          ! --- Seed island current field
+          if (with_jseed) then
+            jseed0    = eq_g(mp,var_jseed,ms,mt)
+            ! seed_source_val is computed per toroidal harmonic inside the im loop
+          endif
             drhoimp0_corr_dn = 0.d0 ! dcorr_neg_dens_drho(rhoimp0, (/ 0.d-5, 1.d-5 /))
           endif
 
@@ -1784,7 +1795,7 @@ do i=1,n_vertex_max
                              - eta_T * v_Z * R                * BR0         &
                              + eta_T * ( 2.d0 * v + R * v_R ) * BZ0         &
                              + R * v * (eta_R * BZ0 - eta_Z * BR0)          &
-                             + eta_T * v * current_source_Jp(ms,mt)         &
+                             + eta_T * v * (current_source_Jp(ms,mt) + jseed0)       &
                              + eta_num * lap_Vstar * lap_A3
 
             !###################################################################################################
@@ -2075,6 +2086,23 @@ do i=1,n_vertex_max
 
             if (use_vms) call add_vms_to_rhs()
 
+            !###################################################################################################
+            !#  equation (seed island current, ECCD-like)                                                        #
+            !###################################################################################################
+            if (with_jseed) then
+              phi = 2.d0*PI*float(mp-1)/float(n_plane) / float(n_period)
+              if (use_fft) then
+                call seed_current_source(A30, x_g(ms,mt), y_g(ms,mt), phi, &
+                     R_axis, Z_axis, -1, seed_source_val)
+              else
+                call seed_current_source(A30, x_g(ms,mt), y_g(ms,mt), 0.d0, &
+                     R_axis, Z_axis, mode(im), seed_source_val)
+              end if
+              Pvec_prev(var_jseed) = v * delta_g(mp,var_jseed,ms,mt)
+              Qvec_p(var_jseed)    = v * R * seed_source_val
+              Qvec_k(var_jseed)    = 0.d0
+            endif
+
             ! --- Fill Up the RHS
             if (use_fft) then
               index_ij =       n_var*n_degrees*(i-1) +       n_var*(j-1) + 1
@@ -2140,7 +2168,7 @@ do i=1,n_vertex_max
                   UR_s  = bf_s  ;  UZ_s  = bf_s  ;  Up_s  = bf_s  ; T_s = bf_s
                   UR_t  = bf_t  ;  UZ_t  = bf_t  ;  Up_t  = bf_t  ; T_t = bf_t
 
-                  AR    = bf    ;  AZ    = bf    ;  A3    = bf    ; Ti    = bf    ; Te    = bf    ; rho    = bf    ; rhon    = bf   ; rhoimp   = bf
+                  AR    = bf    ;  AZ    = bf    ;  A3    = bf    ; Ti    = bf    ; Te    = bf    ; rho    = bf    ; rhon    = bf   ; rhoimp   = bf ; jseed   = bf
                   AR_R  = bf_R  ;  AZ_R  = bf_R  ;  A3_R  = bf_R  ; Ti_R  = bf_R  ; Te_R  = bf_R  ; rho_R  = bf_R  ; rhon_R  = bf_R ; rhoimp_R = bf_R
                   AR_Z  = bf_Z  ;  AZ_Z  = bf_Z  ;  A3_Z  = bf_Z  ; Ti_Z  = bf_Z  ; Te_Z  = bf_Z  ; rho_Z  = bf_Z  ; rhon_Z  = bf_Z ; rhoimp_Z = bf_Z
                   AR_p  = bf_p  ;  AZ_p  = bf_p  ;  A3_p  = bf_p  ; Ti_p  = bf_p  ; Te_p  = bf_p  ; rho_p  = bf_p  ; rhon_p  = bf_p ; rhoimp_p = bf_p
@@ -3012,6 +3040,12 @@ do i=1,n_vertex_max
                                             + eta_T_T * v * current_source_Jp(ms,mt) &
                                             + R * v * (eta_R_T * BZ0 - eta_Z_T * BR0)
                     Qjac_n (var_A3,var_T )= + v * tau_IC*F0/rho0_corr/BB2 * R*Bp0 * BgradPe_Te__n
+                  endif
+
+                  ! --- Seed current Jacobian coupling to A3 equation
+                  if (with_jseed) then
+                    Qjac_p (var_A3, var_jseed) = Qjac_p (var_A3, var_jseed) &
+                      + v * eta_T * jseed
                   endif
 
                   !###################################################################################################
@@ -4486,6 +4520,14 @@ do i=1,n_vertex_max
                     Qjac_k (var_rhoimp,var_rhoimp) = - ((D_par_imp+D_par_imp_sc_num*tau_sc)-D_prof_imp) * BgradVstar__k * BgradRhoimp_rhoimp__p / BB2
                     Qjac_kn(var_rhoimp,var_rhoimp) = - D_prof_imp * gradRhoimp_gradVstar_rhoimp__kn                      &
                                                      - ((D_par_imp+D_par_imp_sc_num*tau_sc)-D_prof_imp) * BgradVstar__k * BgradRhoimp_rhoimp__n / BB2
+                  endif
+
+                  !###################################################################################################
+                  !#  equation (seed island current, ECCD-like)                                                      #
+                  !###################################################################################################
+                  if (with_jseed) then
+                    Pjac (var_jseed, var_jseed) = v * jseed
+                    Qjac_p (var_jseed, var_jseed) = v * jseed * (1.d0 + zeta)
                   endif
 
                   if (use_sc) call add_vms_to_elm()
@@ -6709,4 +6751,134 @@ end subroutine my_fft
 
 end subroutine element_matrix_fft
 
+
+!=======================================================================
+!> Gaussian source for ECCD-like seed island current
+!!
+!! Two modes of operation:
+!! 1. Non-FFT mode (n_tor_mode >= 0): filtered by toroidal mode number.
+!! 2. FFT mode (n_tor_mode < 0): helical source cos(m*theta - n*phi)
+!!    with radial/poloidal Gaussians.
+!! Supports seed_q -> seed_psin conversion and seed_continuous flag.
+!> C^1-continuous temporal envelope for seed island injection.
+!!   One-time pulse: f(t) = sin^2(pi * step/ramp_steps)  [C-infinity bump 0->1->0]
+!!   Continuous:     f(t) = sin^2(pi * step/(2*ramp_steps)) for t<1, f=1 for t>=1
+!!   where t = seed_inject_step / seed_ramp_steps.
+pure real*8 function seed_temporal_envelope()
+  use phys_module, only: seed_continuous, seed_inject_step, seed_ramp_steps
+  use constants, only: PI
+  implicit none
+  real*8 :: t
+
+  if (seed_ramp_steps <= 0) then
+    seed_temporal_envelope = 1.d0
+    return
+  end if
+
+  t = dble(seed_inject_step) / dble(seed_ramp_steps)
+
+  if (seed_continuous) then
+    ! Smooth ramp 0->1: sin^2(pi*t/2), C^1 at t=1
+    if (t >= 1.d0) then
+      seed_temporal_envelope = 1.d0
+    else
+      seed_temporal_envelope = sin(0.5d0 * PI * t)**2
+    end if
+  else
+    ! One-time pulse 0->1->0: sin^2(pi*t), C^1 at t=0 and t=1
+    if (t >= 1.d0) then
+      seed_temporal_envelope = 0.d0
+    else
+      seed_temporal_envelope = sin(PI * t)**2
+    end if
+  end if
+end function seed_temporal_envelope
+
+
+subroutine seed_current_source(ps, R, Z, phi, R_axis, Z_axis, n_tor_mode, source_val)
+  use equil_info, only: ES
+  use phys_module, only: num_seed_islands, seed_psin, seed_amplitude, seed_width, &
+                         seed_n_tor, seed_m_pol, seed_q, seed_continuous, seed_inject_step, &
+                         seed_ramp_steps
+  use mod_bootstrap_functions, only: get_psi_n_from_q
+  use mod_seed_theta_lookup, only: seed_theta_lookup_initialized, seed_lookup_theta_star
+  use constants, only: PI
+  implicit none
+  real*8, intent(in)  :: ps               !< poloidal flux / A3 at Gauss point
+  real*8, intent(in)  :: R, Z             !< (R,Z) coordinates at Gauss point
+  real*8, intent(in)  :: phi              !< toroidal angle [rad] (FFT mode)
+  real*8, intent(in)  :: R_axis, Z_axis   !< magnetic axis
+  integer, intent(in) :: n_tor_mode       !< <0 = FFT mode; >=0 = non-FFT target mode
+  real*8, intent(out) :: source_val
+  integer :: i, m_pol
+  real*8 :: psi_n, width, psi0
+  real*8 :: psi_n_tmp
+  real*8 :: theta, theta_star, helical, radial_gauss, n_tor_dbl
+  real*8 :: t_envelope
+  logical, save :: q_converted = .false.
+
+  source_val = 0.d0
+  if (num_seed_islands == 0) return
+
+  ! --- Compute smooth temporal envelope (C^1 continuous)
+  t_envelope = seed_temporal_envelope()
+  if (t_envelope == 0.d0) return
+
+  ! --- Lazy one-time conversion: seed_q -> seed_psin, seed_m_pol auto-set
+  !$OMP CRITICAL (seed_q_convert_751)
+  if (.not. q_converted) then
+    do i = 1, num_seed_islands
+      if (seed_q(i) > 0.d0) then
+        psi_n_tmp = get_psi_n_from_q(seed_q(i))
+        if (psi_n_tmp >= 0.d0) then
+          seed_psin(i) = psi_n_tmp
+          if (seed_m_pol(i) == 0 .and. seed_n_tor(i) /= 0) then
+            seed_m_pol(i) = nint(seed_q(i) * dble(seed_n_tor(i)))
+          end if
+        end if
+      end if
+    end do
+    q_converted = .true.
+  end if
+  !$OMP END CRITICAL (seed_q_convert_751)
+
+  psi_n = (ps - ES%psi_axis) / sign(max(abs(ES%psi_bnd - ES%psi_axis), 1.d-12), &
+                                         ES%psi_bnd - ES%psi_axis)
+
+  theta = atan2(Z - Z_axis, R - R_axis)
+  if (theta < 0.d0) theta = theta + 2.d0 * PI
+
+  ! --- Convert to straight-field-line angle (if lookup table initialized)
+  if (seed_theta_lookup_initialized) then
+    theta_star = seed_lookup_theta_star(psi_n, theta)
+  else
+    theta_star = theta
+  end if
+
+  do i = 1, num_seed_islands
+    psi0  = seed_psin(i)
+    width = max(seed_width(i), 1.d-6)
+    m_pol = seed_m_pol(i)
+
+    radial_gauss = exp(-0.5d0 * ((psi_n - psi0) / width)**2)
+
+    if (n_tor_mode >= 0) then
+      ! Non-FFT mode: filter by toroidal mode number, radial Gaussian only
+      if (seed_n_tor(i) /= 0 .and. seed_n_tor(i) /= n_tor_mode) cycle
+      source_val = source_val + radial_gauss * t_envelope
+    else
+      ! FFT mode: helical source with poloidal + toroidal structure
+      if (m_pol > 0) then
+        ! --- Helical structure: cos(m*theta* - n*phi) resonant at q=m/n
+        n_tor_dbl = dble(seed_n_tor(i))
+        helical   = cos(dble(m_pol) * theta_star - n_tor_dbl * phi)
+        source_val = source_val + radial_gauss * helical * t_envelope
+      else
+        ! Backward compatible: no poloidal structure, cos(n*phi) modulation only
+        n_tor_dbl = dble(seed_n_tor(i))
+        source_val = source_val + radial_gauss * cos(n_tor_dbl * phi) * t_envelope
+      end if
+    end if
+  enddo
+end subroutine seed_current_source
 end module mod_elt_matrix_fft

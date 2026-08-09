@@ -230,6 +230,8 @@ subroutine initialise_particles(particles, node_list, element_list, &
       call find_RZ(node_list,element_list,R,Z,DUMMY_REAL,DUMMY_REAL,i_elm,s,t,ifail)
       if (ifail .eq. 0) then
         if (present(variables)) then
+          ! Ensure P is allocated in this thread (private allocatable may start unallocated)
+          if (.not. allocated(P)) allocate(P(size(variables,1)))
           ! Select the mhd variables requested
           if (n_mhd .ge. 1) then
             call interp_0(node_list,element_list,i_elm,variables(n_geom+1:n_geom+n_mhd),n_mhd,s,t,phi,P(n_geom+1:n_geom+n_mhd))
@@ -746,6 +748,7 @@ subroutine initialise_particles_H_mu_psi(particles, fields, rng_base, mass, T_ma
   if (.not. init_uniform_space) then
     call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
   end if
+  call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
 
   ! Preset i_elm to 0 so that by default particles are lost
   particles(:)%i_elm = 0
@@ -1205,6 +1208,7 @@ subroutine initialise_particles_H_mu_psi_phiplanes(particles, fields, rng_base, 
   if (.not. init_uniform_space) then
     call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
   end if
+  call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
 
   ! Preset i_elm to 0 so that by default particles are lost
   particles(:)%i_elm = 0
@@ -1907,6 +1911,8 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
 #else
     background_kbT = P(3)/(2.d0*MU_ZERO*central_density*1.d20) ! P(1) contains the total plasma temperature in J/kB = T = Te + Ti
 #endif
+    ! Guard against negative temperature producing NaN velocity
+    background_kbT = max(background_kbT, 0.d0)
     V_thermal = sqrt(background_kbT / (mass*ATOMIC_MASS_UNIT))      ! variance in each of the velocity dimensions [m/s]
 
     ! Only an implementation for particle_kinetic_leapfrog now
@@ -1916,6 +1922,19 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
         ! v_out now contains parallel and perpendicular velocities and the gyrophase
         v_out(1:2) = boxmueller_transform(pa%v(1:2))*V_thermal ! 2 gaussian distributed random numbers
         v_out(3)   = sample_gaussian(pa%v(3))*V_thermal ! very slow, don't use in production
+        ! 3D Maxwellian: speed from chi-squared(3), direction isotropic on sphere
+        block
+          real*8 :: v_mag, theta, phi, u_clamped
+          ! Clamp to avoid atanh divergence in sample_chi_squared_3 near u=1
+          ! u=0.9999 → chi²≈20, E_max≈20*kT; clips ~0.01% tail, Newton stable
+          u_clamped = max(1.d-12, min(0.9999d0, pa%v(1)))
+          v_mag = V_thermal * sqrt(sample_chi_squared_3(u_clamped))
+          theta = acos(1.d0 - 2.d0 * pa%v(2))
+          phi   = TWOPI * pa%v(3)
+          v_out(1) = v_mag * sin(theta) * cos(phi)
+          v_out(2) = v_mag * sin(theta) * sin(phi)
+          v_out(3) = v_mag * cos(theta)
+        end block
 
         if (present(cor)) then
           if (allocated(Z_coronal)) deallocate(Z_coronal)
@@ -1930,6 +1949,17 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
         end if
 
         ! Calculate b^ (unit vector in direction of B)
+            ! Clamp to ADAS coronal table bounds to avoid extrapolation warnings
+            block
+              real*8 :: log_n, log_T
+              log_n = max(cor%density(1), min(cor%density(size(cor%density)), log10(background_density)))
+              log_T = max(cor%temperature(1), min(cor%temperature(size(cor%temperature)), log10(background_kelvin)))
+              call cor%interp(log_n, log_T, Z_coronal)
+            end block
+          endif
+        end if
+
+        ! Calculate B unit vector
         psi_R = (  P_s(4) * Z_t - P_t(4) * Z_s )/(R_s * Z_t - R_t * Z_s)
         psi_Z = (- P_s(4) * R_t + P_t(4) * R_s )/(R_s * Z_t - R_t * Z_s)
         B = [psi_Z, -psi_R, F0]/(R)
@@ -1942,11 +1972,15 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
         ! this might change the direction of the rotation, but that is not important.
         if (present(v_par) .and. v_par) then
           pa%v = v_out(1) + (P(4)/t_norm) * B ! See normalisation of v_par
+        ! Add parallel flow along B if requested
+        if (present(v_par) .and. v_par) then
+          pa%v = v_out + (P(4)/t_norm) * B / norm2(B)
         else
           pa%v = v_out
         end if
 
         if (present(cor)) pa%q = int(maxloc(Z_coronal,1),1) ! take the most probable one here.
+        if (present(cor)) pa%q = int(maxloc(Z_coronal,1) + lbound(Z_coronal,1) - 1, 1) ! take the most probable one here; maxloc is 1-based, Z_coronal is 0-based
         ! should be better, with a random number and selection by probability
       class default
         write(*,*) "set_velocity_from_T not implemented for this particle type"

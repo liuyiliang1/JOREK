@@ -5,9 +5,10 @@ implicit none
 
 logical, parameter :: with_vpar       = .true.
 logical, parameter :: with_TiTe       = .false.
-logical, parameter :: with_neutrals   = .false. 
+logical, parameter :: with_neutrals   = .false.
 logical, parameter :: with_impurities = .false.
 logical, parameter :: with_refluid    = .false. ! not yet possible to switch
+logical, parameter :: with_jseed      = .true.  ! ECCD-style seed island current equation
 
 
 ! ##################################################################################################
@@ -18,7 +19,7 @@ logical, parameter :: with_refluid    = .false. ! not yet possible to switch
 ! The following line is needed by ./util/config.sh:
 ! #SETTINGS# with_vpar with_TiTe with_neutrals with_impurities
 
-integer, parameter :: jorek_model     = 600
+integer, parameter :: jorek_model     = 601
 
 logical, parameter :: hydrodynamics   = .false.
 logical, parameter :: reduced_MHD     = .true.
@@ -28,14 +29,15 @@ logical, parameter :: model_family      = .true.
 character(len=42)  :: base_mod_descr    = 'Model family for tokamak reduced MHD'
 
 ! --- extensions to it
-integer, parameter :: n_mod_ext            = 5      !< Number of model extensions
+integer, parameter :: n_mod_ext            = 6      !< Number of model extensions
 integer, parameter :: i_ext_TiTe           = 1
 integer, parameter :: i_ext_vpar           = 2
 integer, parameter :: i_ext_neutrals       = 3
 integer, parameter :: i_ext_impurities     = 4
 integer, parameter :: i_ext_refluid        = 5
+integer, parameter :: i_ext_jseed          = 6
 logical, parameter :: with_ext(n_mod_ext) = &
-  (/ with_TiTe, with_vpar, with_neutrals, with_impurities, with_refluid /)
+  (/ with_TiTe, with_vpar, with_neutrals, with_impurities, with_refluid, with_jseed /)
 
 ! --- number of variables (for base model, extension, and in total)
 integer, parameter :: n_var_base        = 6         !< number of variables in base model
@@ -44,8 +46,9 @@ integer, parameter :: n_var_vpar        = sum(merge( (/1/), (/0/), with_vpar    
 integer, parameter :: n_var_neutrals    = sum(merge( (/1/), (/0/), with_neutrals  ))
 integer, parameter :: n_var_impurities  = sum(merge( (/1/), (/0/), with_impurities))
 integer, parameter :: n_var_refluid     = sum(merge( (/1/), (/0/), with_refluid   )) !### not yet
+integer, parameter :: n_var_jseed       = sum(merge( (/1/), (/0/), with_jseed     ))
 integer, parameter :: n_var_ext(n_mod_ext) = (/ n_var_TiTe, n_var_vpar, n_var_neutrals,         &
-  n_var_impurities, n_var_refluid /)
+  n_var_impurities, n_var_refluid, n_var_jseed /)
 integer, parameter :: n_var = n_var_base + sum(n_var_ext) !< total number of variables
 
 ! --- variable indices for the base model
@@ -62,7 +65,7 @@ integer, parameter :: var_Vpar     = sum(merge((/                               
 integer, parameter :: var_rhon     = sum(merge((/n_var_base+sum(n_var_ext(1:2))+1/), (/0/), with_neutrals  ))
 integer, parameter :: var_rhoimp   = sum(merge((/n_var_base+sum(n_var_ext(1:3))+1/), (/0/), with_impurities))
 integer, parameter :: var_nre      = sum(merge((/n_var_base+sum(n_var_ext(1:4))+1/), (/0/), with_refluid   ))
-integer, parameter :: var_jseed    = 0  ! only active in model601+
+integer, parameter :: var_jseed    = sum(merge((/n_var_base+sum(n_var_ext(1:5))+1/), (/0/), with_jseed     ))
 ! --- variables not relevant to this model
 integer, parameter :: var_AR   = 0
 integer, parameter :: var_AZ   = 0
@@ -76,14 +79,6 @@ logical, parameter :: unified_element_matrix = .true.
 !> parameters for naming equation terms in the RHS diagnostic 
 integer,  parameter :: max_terms    = 26
 integer,  parameter :: n_terms_psi  = 5
-integer,  parameter :: n_terms_u    = 13
-integer,  parameter :: n_terms_zj   = 1
-integer,  parameter :: n_terms_w    = 1
-integer,  parameter :: n_terms_rho  = 14
-integer,  parameter :: n_terms_T    = 26
-integer,  parameter :: n_terms_Te   = 20
-integer,  parameter :: n_terms_Ti   = 18
-integer,  parameter :: n_terms_vpar = 13
 integer,  parameter :: n_terms_u    = 14
 integer,  parameter :: n_terms_zj   = 1
 integer,  parameter :: n_terms_w    = 1
@@ -94,6 +89,7 @@ integer,  parameter :: n_terms_Ti   = 18
 integer,  parameter :: n_terms_vpar = 12
 integer,  parameter :: n_terms_rhon = 7
 integer,  parameter :: n_terms_rhoimp = 10
+integer,  parameter :: n_terms_jseed  = 3
 
 character*36, dimension(n_var, max_terms) :: term_names
 character*36, dimension(n_terms_psi),  parameter :: Psi_term_names=  &
@@ -116,7 +112,6 @@ character*36, dimension(n_terms_u),     parameter :: u_term_names=  &
                                                  'u_Eq__ext_dens_source  ', &  ! 10:
                                                  'u_Eq__neoclassical_term', &  ! 11:
                                                  'u_Eq__rep_pressure     ', &  ! 12:
-                                                 'u_Eq__epf_pressure     '/)   ! 13:
                                                  'u_Eq__epf_pressure     ', &  ! 13:
                                                  'u_Eq__centrifugal_force'/)   ! 14:
 
@@ -139,8 +134,6 @@ character*36, dimension(n_terms_u),     parameter :: u_term_names=  &
                                                  'rho_Eq__zeta_time_evol    ', &  ! 10:
                                                  'rho_Eq__Dperp_num_term    ', &  ! 11:
                                                  'rho_Eq__tg_num_term       ', &  ! 12:
-                                                 'rho_Eq__aux_density_source', &  ! 13:
-                                                 'rho_Eq__inward_pinch      '/)   ! 14:
                                                  'rho_Eq__aux_density_source'/)   ! 13:
 
 character*36, dimension(n_terms_T),     parameter :: T_term_names=  &
@@ -228,8 +221,6 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'vpar_Eq__viscopar_term          ', &  !  9:
                                                  'vpar_Eq__neoclassical_term      ', &  ! 10:
                                                  'vpar_Eq__aux_particle_source    ', &  ! 11:
-                                                 'vpar_Eq__aux_par_momentum_source', &  ! 12:
-                                                 'vpar_Eq__inward_pinch           '/)   ! 13: 
                                                  'vpar_Eq__aux_par_momentum_source'/)   ! 12:
 
  character*36, dimension(n_terms_rhon), parameter :: rhon_term_names=  &
@@ -252,6 +243,11 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'rhoimp_Eq__ext_dens_source ', &  !  8:
                                                  'rhoimp_Eq__zeta_time_evol  ', &  !  9:
                                                  'rhoimp_Eq__Dn_perp_num_term'/)   ! 10:
+
+ character*36, dimension(n_terms_jseed), parameter :: jseed_term_names= &
+                                              (/ 'jseed_Eq__source_term      ', &  !  1: ECCD source
+                                                 'jseed_Eq__coll_damping     ', &  !  2: collisional damping
+                                                 'jseed_Eq__par_convection   '/)   !  3: parallel convection
 
 contains
 
@@ -289,6 +285,8 @@ subroutine assign_term_names()
       term_names(k_var, 1:n_terms_rhon) = rhon_term_names(:)
     else if (k_var == var_rhoimp) then
       term_names(k_var, 1:n_terms_rhoimp) = rhoimp_term_names(:)
+    else if (k_var == var_jseed) then
+      term_names(k_var, 1:n_terms_jseed ) = jseed_term_names(:)
     endif
 
   enddo
@@ -324,6 +322,8 @@ elemental pure logical function ext_available(i_ext)
     ext_available = .true.
   else if ( i_ext == i_ext_refluid ) then
     ext_available = .false.
+  else if ( i_ext == i_ext_jseed ) then
+    ext_available = .true.
   end if
   
 end function ext_available

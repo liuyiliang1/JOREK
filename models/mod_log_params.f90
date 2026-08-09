@@ -563,6 +563,9 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
   write(*,REAL_FMT) 'visco_num             ', visco_num
   write(*,LOGI_FMT) 'visco_num_T_dependent ', visco_num_T_dependent
   write(*,REAL_FMT) 'visco_par_num         ', visco_par_num
+  write(*,REAL_FMT) 'visco_sol             ', visco_sol
+  write(*,REAL_FMT) 'visco_sol_tanh_psin   ', visco_sol_tanh_psin
+  write(*,REAL_FMT) 'visco_sol_tanh_sig    ', visco_sol_tanh_sig
   write(*,REAL_FMT) 'D_perp_num            ', D_perp_num
   write(*,REAL_FMT) 'D_perp_num_tanh       ', D_perp_num_tanh
   write(*,REAL_FMT) 'D_perp_num_tanh_psin  ', D_perp_num_tanh_psin
@@ -1104,6 +1107,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
             write(*,REAL_FMT) 'neutral_coll_dTw,       ',part_group_configs(group_num)%neutral_coll_dTw
             write(*,INTG_FMT) 'ncoll_each_nstep_part,  ',part_group_configs(group_num)%ncoll_each_nstep_part
           endif
+          if(sim%groups(group_num)%use_kin_neutral_coll) write(*,REAL_FMT) 'neutral_coll_dTw,       ',part_group_configs(group_num)%neutral_coll_dTw
         endif
 
         ! ics specific
@@ -1111,6 +1115,9 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           write(*,LOGI_FMT) 'use_kin_bg_collisions,  ',sim%groups(group_num)%use_kin_bg_collisions
           write(*,CHAR_FMT) 'kin_bg_coll_type,  ',sim%groups(group_num)%kin_bg_coll_type
           write(*,REAL_FMT) 'homma2020_alpha,  ',sim%groups(group_num)%homma2020_alpha
+          write(*,INTG_FMT) 'ics_group_idx,    ',sim%groups(group_num)%ics_group_idx
+          write(*,LOGI_FMT) 'use_sheath,       ',sim%groups(group_num)%use_sheath
+          write(*,REAL_FMT) 'ics_concentration,',sim%groups(group_num)%ics_concentration
         endif
 
         write(*,CHAR_FMT) 'atom_data_suffix,       ',trim(part_group_configs(group_num)%atom_data_suffix)
@@ -1188,6 +1195,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', part_group_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 
@@ -1239,6 +1247,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', fluid_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 

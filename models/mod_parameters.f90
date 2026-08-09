@@ -65,6 +65,9 @@ else if ( i_var == var_rhoimp ) then
 else if ( i_var == var_nre ) then
   name  = 'n_RE'
   descr = 'runaway electron particle density'
+else if ( i_var == var_jseed ) then
+  name  = 'j_seed'
+  descr = 'ECCD-style seed island current density'
 else if ( i_var == var_AR ) then
   name  = "AR"
   descr = "R component of magnetic vector potential"

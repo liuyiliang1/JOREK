@@ -6,6 +6,7 @@ use phys_module
 use mod_poiss
 use equil_info
 use mod_sources
+use mod_seed_theta_lookup, only: seed_init_theta_lookup
 
 implicit none
 
@@ -16,6 +17,7 @@ type (type_bnd_node_list)    :: bnd_node_list
 type (type_bnd_element_list) :: bnd_elm_list
 
 integer    :: my_id, i, in, mm, i_elm, ifail, xcase2
+integer    :: iseed
 real*8     :: amplitude, psi, psi_n, theta, r0
 real*8     :: zn,  dn_dpsi,  dn_dpsi2,  dn_dz,  dn_dz2,  dn_dpsi_dz,  dn_dpsi3,  dn_dpsi2_dz,  dn_dpsi_dz2
 real*8     :: zrn, drn_dpsi, drn_dpsi2, drn_dz, drn_dz2, drn_dpsi_dz, drn_dpsi3, drn_dpsi2_dz, drn_dpsi_dz2
@@ -300,6 +302,53 @@ do in=2,n_tor
   call Poisson(my_id,1,node_list,element_list,bnd_node_list,bnd_elm_list, &
                var_w,var_u,1, ES%psi_axis,ES%psi_bnd,xpoint2, xcase2,ES%Z_xpoint,freeboundary_equil,refinement,1)
 enddo
+
+!---------------------------- seed island current initialization (ECCD-like equation)
+! Seed perturbations (jseed/psiseed) are injected directly into psi RHS
+if (my_id == 0) then
+  if (num_seed_islands > 0) then
+    write(*,*) 'Model 601: seed island perturbations active.'
+    write(*,*) 'Number of seeds:', num_seed_islands
+    do iseed = 1, num_seed_islands
+      if (seed_type(iseed) == 0) then
+        write(*,'(A,I0,A,F8.4,A,F12.4,A,F8.4,A,I0,A,I0,A,F8.4)') &
+          '  Seed ', iseed, ' (jseed): psin=', seed_psin(iseed), &
+          ' ampl=', seed_amplitude(iseed), ' width=', seed_width(iseed), &
+          ' n=', seed_n_tor(iseed), ' m=', seed_m_pol(iseed), &
+          ' q=', seed_q(iseed)
+        if (seed_continuous) then
+          write(*,*) '    Continuous injection (ECCD-like).'
+        else
+          write(*,*) '    One-time injection.'
+        end if
+      else
+        write(*,'(A,I0,A,F8.4,A,F8.4,A,F8.4,A,I0,A,I0,A,F8.4)') &
+          '  Seed ', iseed, ' (psiseed): psin=', seed_psin(iseed), &
+          ' W=', psiseed_width(iseed), ' width=', seed_width(iseed), &
+          ' n=', seed_n_tor(iseed), ' m=', seed_m_pol(iseed), &
+          ' q=', seed_q(iseed)
+        write(*,*) '    One-time flux perturbation (tearing mode seed).'
+      end if
+    enddo
+  endif
+endif
+
+! Initialize jseed variable to zero (ECCD-style seed current)
+if (with_jseed) then
+  if (my_id == 0) then
+    do i = 1, node_list%n_nodes
+      node_list%node(i)%values(:, :, var_jseed) = 0.d0
+    end do
+    if (num_seed_islands > 0) then
+      write(*,*) 'jseed variable (var_jseed=', var_jseed, ') initialized to zero.'
+    end if
+  end if
+end if
+
+! Initialize straight-field-line angle lookup for seed perturbation
+if (num_seed_islands > 0) then
+  call seed_init_theta_lookup(node_list, element_list, ES)
+end if
 
 return
 end

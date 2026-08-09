@@ -836,6 +836,9 @@ do ms=1, n_gauss
        case('Ne')
          m_i_over_m_imp = central_mass/20. ! Neon mass = 20 u and main ion (D) mass = 2 u
          m_imp          = 20.
+       case('B')
+         m_i_over_m_imp = central_mass/11. ! Boron mass = 11 u
+         m_imp          = 11.
        case default
          write(*,*) '!! Gas type "', trim(imp_type(index_main_imp)), '" unknown (in inj_source.f90) !!'
          write(*,*) '=> We assume the gas is D2.'
