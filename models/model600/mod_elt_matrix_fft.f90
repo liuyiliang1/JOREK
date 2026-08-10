@@ -722,14 +722,9 @@ do i=1,n_vertex_max
 
           !> kinetic neutrals or kinetic impurities
           if (use_ncs .or. use_ics) then
-              if (use_ncs) aux_rho0 = eq_aux_g(mp,rho_idx_kin,ms,mt)
-#ifdef WITH_TiTe
-              aux_E0_Te = eq_aux_g(mp,E_Te_idx_kin,ms,mt)
-              aux_E0_Ti = eq_aux_g(mp,E_Ti_idx_kin,ms,mt)
-#else
-              aux_E0 = eq_aux_g(mp,E_idx_kin,ms,mt)
-#endif
-              aux_mom_par0 = eq_aux_g(mp,mom_par_idx_kin,ms,mt)
+            if (use_ncs) aux_rho0 = eq_aux_g(mp,rho_idx_kin,ms,mt)
+            aux_E0       = eq_aux_g(mp,E_idx_kin,ms,mt)
+            aux_mom_par0 = eq_aux_g(mp,mom_par_idx_kin,ms,mt)
           end if
 
           !> kinetic runaway electrons 
@@ -1376,8 +1371,9 @@ do i=1,n_vertex_max
             source_neutral_drift = max(0.,source_neutral_drift)
 
           else if (use_ncs .and. use_kin_recomb_global) then !< using kinetic neutrals (current not compatible with fluid neutrals)
-            call rec_rate_to_kinetic(r0, Te0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradDcont_T, dLradDcont_dT, LradDcont_corr, dLradDcont_dT_corr)  
-
+            
+            call rec_rate_to_kinetic(r0, 0.5d0*T0, Sion_T, dSion_dT, Srec_T, dSrec_dT, LradDcont_T, dLradDcont_dT, LradDcont_corr, dLradDcont_dT_corr)  
+             
             !> following terms are handled on the kinetic side (mod_particle_evolution.f90)
             LradDrays_T   = 0.d0
             dLradDrays_dT = 0.d0
@@ -2048,7 +2044,7 @@ do i=1,n_vertex_max
                              + zeta * v * T0      * delta_g(mp,var_rho,ms,mt) * BigR            * xjac * factor(var_T,10)                     &
                              +implicit_heat_source*(gamma-1.d0)*v &
                              * (0.5d0*T_min_neg*(1 + exp( (min(T0,T_min_neg)-T_min_neg)/(0.5d0*T_min_neg) )) -min(T0,T_min_neg)) &
-                             *                                                                                 xjac*tstep*BigR  *factor(var_T,20)& 
+                             *                                                                                 xjac*tstep*BigR  * factor(var_T,20) &
 
                             ! ------------------------------ from kinetic neutral / impurity coupling ---------------------------------------
                              + v * BigR * aux_E0                                                                         * xjac * tstep * factor(var_T,24) &

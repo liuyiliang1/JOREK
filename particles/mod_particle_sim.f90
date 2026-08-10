@@ -5,6 +5,7 @@ use mod_fields
 use mod_openadas
 use mod_coronal
 use basis_at_gaussian
+use phys_module, only: adas_dir
 implicit none
 private
 public particle_group, particle_sim, configure_particle_groups
@@ -13,32 +14,33 @@ public group_num_from_id, config_num_from_id
 !> A group of particles, implemented as an allocatable array.
 !> It must contain particles of the same species (charge number).
 type :: particle_group
-  integer            :: Z                      = 1        !< Atomic number of al particles in the group (-1 for electrons, 0 for fieldline-following)
-  real*8             :: mass                   = 0.d0     !< Mass of all the particles in the group
-  type(ADF11_all)    :: ad                                !< OPEN-ADAS datafiles for this species
-  type(coronal)      :: cor                               !< (coronal) equilibrium pre-calculation
-  real*8             :: dt                                !< timestep (if fixed for all particles in this group)
-  character(len=3)   :: coupling_scheme        = 'non'    !< coupling scheme to use for the group
-  real*8             :: n_particles            = 0.d0     !< number of super/marker particles in group
-  character(len=3)   :: id                     = 'non'    !< unique identifier for the group (mainly used when restarting)
-  real*8             :: average_weight         = -1.d0    !< average weight of all particles in the group (preset value negative to avoid killing of particles in first instance)
-  logical            :: do_conservation_checks = .false.  !< whether to write conservation checks every interaction in the output file (i.e. the change in particles/momentum/energy etc.)
+  integer            :: Z                                          !< Atomic number of al particles in the group (-1 for electrons, 0 for fieldline-following)
+  real*8             :: mass                                       !< Mass of all the particles in the group
+  type(ADF11_all)    :: ad                                         !< OPEN-ADAS datafiles for this species
+  type(coronal)      :: cor                                        !< (coronal) equilibrium pre-calculation
+  real*8             :: dt                                         !< timestep (if fixed for all particles in this group)
+  character(len=3)   :: coupling_scheme                            !< coupling scheme to use for the group
+  real*8             :: n_particles                                !< number of super/marker particles in group
+  character(len=3)   :: id = "???"                                 !< unique identifier for the group (mainly used when restarting)
+  real*8             :: average_weight = -1.d0                     !< average weight of all particles in the group (preset value negative to avoid killing of particles in first instance)
+  logical            :: do_conservation_checks                     !< whether to write conservation checks every interaction in the output file (i.e. the change in particles/momentum/energy etc.)
  
   ! ================ for neutrals and impurities =============
-  logical            :: use_kin_ionisation = .false.      !< switch on ionisation for group         
-  logical            :: use_kin_puffing    = .false.      !< switch on particle puffing for group
-  logical            :: use_kin_radiation  = .false.      !< switch on line radiation for group
+  logical            :: use_kin_ionisation       !< switch on ionisation for group         
+  logical            :: use_kin_puffing          !< switch on particle puffing for group
+  logical            :: use_kin_radiation        !< switch on line radiation for group
 
   ! --- neutrals only
-  logical            :: use_kin_cx            = .false.   !< switch on charge-exchange for group  
-  logical            :: use_kin_recombination = .false.   !< switch on recombination for group       
-  logical            :: use_kin_neutral_coll  = .false.   !< switch on neutral self-collisions for group       
+  logical            :: use_kin_cx               !< switch on charge-exchange for group  
+  logical            :: use_kin_recombination    !< switch on recombination for group       
+  logical            :: use_kin_neutral_coll     !< switch on neutral self-collisions for group       
 
   ! --- impurities only
-  logical            :: use_kin_bg_collisions = .false.     !< switch on collisions with the background plasma
-  character(len=9)   :: kin_bg_coll_type      = 'Homma2020' !< method to calculate heat flux in kin_bg_collision
-  real*8             :: homma2020_alpha       = 1.5d0       !< flux limiting factor alpha for Homma2020 heat flux
-  integer            :: ics_group_idx         = -1          !< internal index given to this specific impurities group
+  logical            :: use_kin_bg_collisions    !< switch on collisions with the background plasma
+  character(len=9)   :: kin_bg_coll_type         !< method to calculate heat flux in kin_bg_collision
+  real*8             :: homma2020_alpha          !< flux limiting factor alpha for Homma2020 heat flux
+  integer            :: ics_group_idx            !< internal index given to this specific impurities group
+  logical            :: use_sheath               !< switch on sheath boundary conditions for this group
 
   class(particle_base), dimension(:), allocatable :: particles
 
@@ -82,7 +84,7 @@ contains
 !> Loads the information from a type_part_group_config type to a particle_group type
 subroutine configure_particle_groups(sim)
   use phys_module, only: n_part_groups, part_group_configs, type_part_group_config
-  use phys_module, only: part_groups_in_use, deuterium_adas
+  use phys_module, only: part_groups_in_use, adas_dir
   use mod_particle_group_id, only: matching_part_config_indices, matching_sim_groups_indices
 
   implicit none
@@ -117,20 +119,14 @@ subroutine configure_particle_groups(sim)
       sim%groups(i)%kin_bg_coll_type       =  config%kin_bg_coll_type
       sim%groups(i)%homma2020_alpha        =  config%homma2020_alpha
       sim%groups(i)%ics_group_idx          =  config%ics_group_idx
-   
-      ! --- Input sanity checks 
+      sim%groups(i)%use_sheath             =  config%use_sheath
+    
       if (len_trim(config%atom_data_suffix) > 0) then
-        sim%groups(i)%ad =  read_adf11(sim%my_id, trim(part_group_configs(i)%atom_data_suffix))
+        sim%groups(i)%ad =  read_adf11(sim%my_id, trim(part_group_configs(i)%atom_data_suffix),trim(adas_dir))
       else
         if (trim(config%coupling_scheme) == 'ncs') write(*,*) "WARNING: No atom_data_suffix set for particle group ", i, "."
       endif
 
-      if (trim(sim%groups(i)%coupling_scheme) == 'ncs') then
-        if (sim%groups(i)%use_kin_recombination .and. (.not. deuterium_adas)) then
-          write(*,*) 'ERROR: use_kin_recombination requires deuterium_adas = .true.'
-          stop
-        endif
-      endif
 
       if (sim%groups(i)%use_kin_bg_collisions) then
         if ((sim%groups(i)%kin_bg_coll_type /= 'Homma2013') .and. (sim%groups(i)%kin_bg_coll_type /= 'Homma2020')) then

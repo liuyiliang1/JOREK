@@ -1188,6 +1188,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', part_group_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 
@@ -1239,6 +1240,7 @@ write(*,'(1x,a)',advance='no') ' USE_DOMM            : '
           else
             write(*,"(3X,A,' = ',99ES12.4)")    'supers_ratio_wall     ', fluid_configs(group_num)%wall_act_configs(i)%supers_ratio_wall
           endif
+
         end do
       end if !wall actions
 

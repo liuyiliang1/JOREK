@@ -1178,7 +1178,6 @@ module phys_module
   logical :: use_fixed_rng_value                      !< forcibly set all rng outputs to return a specific value (set by fixed_rng_value, use this for debugging and testing only)
   real*8  :: fixed_rng_value                          !< the value the fixed rng is set to when using use_fixed_rng_value
 
-
   !> @name Flag to determine whether or not we are running an FRC simulation (for now, only used to set the default value of the toroidal rotation profile, but it could be used in the future to set other default values for FRC-specific parameters)
   logical :: FRC_simulation
   contains
