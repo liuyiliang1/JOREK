@@ -1124,7 +1124,6 @@ module phys_module
                                                    !< recommended value is 1.5 for ion heat flux, see Homma 2020 and Fundamenski 2005
     integer             :: ics_group_idx           !< internal index given to this specific impurities group, used to obtain the variable index of charge density
                                                    !< projectons specific to this group, as we require a charge density projection for each impurities group for coupling
-                                             
     logical             :: use_sheath              !< switch on sheath boundary conditions for this impurities group
     real*8              :: ics_concentration = 0.d0 !< impurity concentration for density-proportional initialization (0 = use puffing mode)
 

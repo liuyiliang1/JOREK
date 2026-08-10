@@ -748,7 +748,6 @@ subroutine initialise_particles_H_mu_psi(particles, fields, rng_base, mass, T_ma
   if (.not. init_uniform_space) then
     call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
   end if
-  call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
 
   ! Preset i_elm to 0 so that by default particles are lost
   particles(:)%i_elm = 0
@@ -1208,7 +1207,6 @@ subroutine initialise_particles_H_mu_psi_phiplanes(particles, fields, rng_base, 
   if (.not. init_uniform_space) then
     call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
   end if
-  call find_axis(my_id, fields%node_list, fields%element_list, psi_axis, R_axis, Z_axis, i_elm, s_axis, t_axis, ifail)
 
   ! Preset i_elm to 0 so that by default particles are lost
   particles(:)%i_elm = 0
@@ -1919,9 +1917,6 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
     select type (pa => particles(i))
       type is (particle_kinetic_leapfrog)
 
-        ! v_out now contains parallel and perpendicular velocities and the gyrophase
-        v_out(1:2) = boxmueller_transform(pa%v(1:2))*V_thermal ! 2 gaussian distributed random numbers
-        v_out(3)   = sample_gaussian(pa%v(3))*V_thermal ! very slow, don't use in production
         ! 3D Maxwellian: speed from chi-squared(3), direction isotropic on sphere
         block
           real*8 :: v_mag, theta, phi, u_clamped
@@ -1944,11 +1939,6 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
             Z_coronal = 0.d0
             Z_coronal(0) = 1.d0
           else
-            call cor%interp(log10(background_density),log10(background_kelvin),Z_coronal)
-          endif
-        end if
-
-        ! Calculate b^ (unit vector in direction of B)
             ! Clamp to ADAS coronal table bounds to avoid extrapolation warnings
             block
               real*8 :: log_n, log_T
@@ -1964,14 +1954,6 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
         psi_Z = (- P_s(4) * R_t + P_t(4) * R_s )/(R_s * Z_t - R_t * Z_s)
         B = [psi_Z, -psi_R, F0]/(R)
 
-        ! Transform parallel and perpendicular velocities to R, Z, Phi
-        ! To get the perpendicular vector, get a single vector perpendicular to b (b x r)
-        ! and rotate it by another vector perpendicular to b.
-        ! use the vector triple product to simplify.
-        ! I'm not sure if this formula is the same in a right-handed coordinate system...
-        ! this might change the direction of the rotation, but that is not important.
-        if (present(v_par) .and. v_par) then
-          pa%v = v_out(1) + (P(4)/t_norm) * B ! See normalisation of v_par
         ! Add parallel flow along B if requested
         if (present(v_par) .and. v_par) then
           pa%v = v_out + (P(4)/t_norm) * B / norm2(B)
@@ -1979,7 +1961,6 @@ subroutine set_velocity_from_T(particles, mass, node_list, element_list, cor, v_
           pa%v = v_out
         end if
 
-        if (present(cor)) pa%q = int(maxloc(Z_coronal,1),1) ! take the most probable one here.
         if (present(cor)) pa%q = int(maxloc(Z_coronal,1) + lbound(Z_coronal,1) - 1, 1) ! take the most probable one here; maxloc is 1-based, Z_coronal is 0-based
         ! should be better, with a random number and selection by probability
       class default

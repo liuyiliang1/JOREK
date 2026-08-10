@@ -32,9 +32,6 @@ module mod_initialise_particles
       !> initialisation of energetic particles
       case ('epc', 'epp', 'epf')
         call initialise_group_EP(sim, i)
-      !> ics and ncs schemes don't need to initialise particles
-      case ('ics', 'ncs')
-        if (sim%my_id == 0) write(*,*) " Initialisation skipped for ncs / ics, particles are not all initialised at once"
       !> initialisation of impurities with density-proportional distribution
       case ('ics')
         call initialise_group_ICS(sim, i)
