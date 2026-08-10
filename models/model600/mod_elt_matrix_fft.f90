@@ -1656,8 +1656,6 @@ do i=1,n_vertex_max
                            + BigR**2 * ( -aux_divPIR_perp*v_y + aux_divPIZ_perp*v_x)  * xjac * tstep * factor(var_u,13)
                         ! ---------------------------------   end of kinetic coupling terms -------------------------------------------
 
-
-            
             ! --- Centrifugal force contribution (½ρΩ²R² in effective pressure balance)
             ! Ω² = v_par²·F0²/(BigR⁴·BB2)
             ! C0 = ½·r0·v_par²·F0²/(BigR²·BB2)
@@ -1745,7 +1743,6 @@ do i=1,n_vertex_max
                                  * (r0_x * ps0_y - r0_y * ps0_x + F0 / BigR * r0_p)                              &
                                  * (                            + F0 / BigR * v_p) * xjac * tstep * tstep        * factor(var_rho,12) 
 
-
             !###################################################################################################
             !#  Parallel Velocity Equation                                                                     #
             !###################################################################################################
@@ -1822,7 +1819,6 @@ do i=1,n_vertex_max
               rhs_ij(var_vpar) = rhs_ij(var_vpar) &
                                  + V_prof_pinch / sqrt(psi_grad2) * (ps0_x * vpar0_x + ps0_y * vpar0_y) &
                                          * r0 * v * BigR * xjac * tstep * factor(var_vpar,13)
-
 
               rhs_ij_k(var_vpar) = + 0.5d0 * r0 * vpar0**2 * BB2 * F0 / BigR * v_p                      * xjac * tstep * factor(var_vpar,3) &
   

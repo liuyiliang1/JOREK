@@ -219,7 +219,6 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'vpar_Eq__aux_particle_source    ', &  ! 11:
                                                  'vpar_Eq__aux_par_momentum_source', &  ! 12:
                                                  'vpar_Eq__inward_pinch           '/)   ! 13: 
-                                                 'vpar_Eq__aux_par_momentum_source'/)   ! 12:
 
  character*36, dimension(n_terms_rhon), parameter :: rhon_term_names=  &
                                               (/ 'rhon_Eq__neutral_diffusion', &  !  1:

@@ -1006,6 +1006,13 @@ module phys_module
   integer :: find_RZ_nearby_iter  !< the maximum newton iterations used in find_RZ_nearby 
   real*8  :: find_RZ_nearby_tol   !< the squared element tolerance used in find_RZ_nearby for finding a position inside an element (unit: element size)
 
+  real*8  :: puff_rate        !< physical atoms/sec puffed (shared over 2 places)
+  real*8  :: r_valve          !< radius of poloidal circular source
+  real*8  :: R_valve_loc      !< R position valve 1
+  real*8  :: Z_valve          !< Z position valve 1
+  real*8  :: R_valve_loc2     !< R position valve 2
+  real*8  :: Z_valve2         !< Z position valve 2
+  integer :: n_puff           !< superparticles used per puffing action per valve
 
   ! -----------------------------------------------
   ! --- Structures for particle valves 
@@ -1118,7 +1125,6 @@ module phys_module
                                                    !< recommended value is 1.5 for ion heat flux, see Homma 2020 and Fundamenski 2005
     integer             :: ics_group_idx           !< internal index given to this specific impurities group, used to obtain the variable index of charge density
                                                    !< projectons specific to this group, as we require a charge density projection for each impurities group for coupling
-                                             
     logical             :: use_sheath              !< switch on sheath boundary conditions for this impurities group
     real*8              :: ics_concentration = 0.d0 !< impurity concentration for density-proportional initialization (0 = use puffing mode)
 
