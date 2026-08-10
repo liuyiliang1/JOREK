@@ -75,7 +75,7 @@ logical, parameter :: unified_element_matrix = .true.
 !> parameters for naming equation terms in the RHS diagnostic 
 integer,  parameter :: max_terms    = 26
 integer,  parameter :: n_terms_psi  = 5
-integer,  parameter :: n_terms_u    = 13
+integer,  parameter :: n_terms_u    = 14
 integer,  parameter :: n_terms_zj   = 1
 integer,  parameter :: n_terms_w    = 1
 integer,  parameter :: n_terms_rho  = 14
@@ -83,14 +83,6 @@ integer,  parameter :: n_terms_T    = 26
 integer,  parameter :: n_terms_Te   = 20
 integer,  parameter :: n_terms_Ti   = 18
 integer,  parameter :: n_terms_vpar = 13
-integer,  parameter :: n_terms_u    = 14
-integer,  parameter :: n_terms_zj   = 1
-integer,  parameter :: n_terms_w    = 1
-integer,  parameter :: n_terms_rho  = 13
-integer,  parameter :: n_terms_T    = 26
-integer,  parameter :: n_terms_Te   = 20
-integer,  parameter :: n_terms_Ti   = 18
-integer,  parameter :: n_terms_vpar = 12
 integer,  parameter :: n_terms_rhon = 7
 integer,  parameter :: n_terms_rhoimp = 10
 
@@ -115,7 +107,6 @@ character*36, dimension(n_terms_u),     parameter :: u_term_names=  &
                                                  'u_Eq__ext_dens_source  ', &  ! 10:
                                                  'u_Eq__neoclassical_term', &  ! 11:
                                                  'u_Eq__rep_pressure     ', &  ! 12:
-                                                 'u_Eq__epf_pressure     '/)   ! 13:
                                                  'u_Eq__epf_pressure     ', &  ! 13:
                                                  'u_Eq__centrifugal_force'/)   ! 14:
 
@@ -140,7 +131,6 @@ character*36, dimension(n_terms_u),     parameter :: u_term_names=  &
                                                  'rho_Eq__tg_num_term       ', &  ! 12:
                                                  'rho_Eq__aux_density_source', &  ! 13:
                                                  'rho_Eq__inward_pinch      '/)   ! 14:
-                                                 'rho_Eq__aux_density_source'/)   ! 13:
 
 character*36, dimension(n_terms_T),     parameter :: T_term_names=  &
                                               (/ 'T_Eq__ext_heat_source        ', &  !  1:
@@ -229,7 +219,6 @@ character*36, dimension(n_terms_vpar),  parameter :: vpar_term_names=  &
                                                  'vpar_Eq__aux_particle_source    ', &  ! 11:
                                                  'vpar_Eq__aux_par_momentum_source', &  ! 12:
                                                  'vpar_Eq__inward_pinch           '/)   ! 13: 
-                                                 'vpar_Eq__aux_par_momentum_source'/)   ! 12:
 
  character*36, dimension(n_terms_rhon), parameter :: rhon_term_names=  &
                                               (/ 'rhon_Eq__neutral_diffusion', &  !  1:

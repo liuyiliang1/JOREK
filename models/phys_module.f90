@@ -831,6 +831,7 @@ module phys_module
   integer :: seed_n_tor(max_seed_islands) = 0                       !< Toroidal mode number n for each seed
   real*8  :: seed_width(max_seed_islands) = 0.02d0                  !< Radial Gaussian width in psi_n
   integer :: seed_m_pol(max_seed_islands) = 0                       !< Poloidal mode number m (0=auto from q*n)
+  real*8  :: seed_amplitude = 1.d0                                    !< seed perturbation amplitude
   real*8  :: seed_q(max_seed_islands) = 0.d0                         !< q value at rational surface (>0 replaces seed_psin)
   logical :: seed_continuous = .false.                                !< .true.=continuous injection; .false.=one-time
   integer :: seed_inject_step = 0                                     !< internal: step counter for temporal envelope
@@ -1121,7 +1122,6 @@ module phys_module
                                                    !< recommended value is 1.5 for ion heat flux, see Homma 2020 and Fundamenski 2005
     integer             :: ics_group_idx           !< internal index given to this specific impurities group, used to obtain the variable index of charge density
                                                    !< projectons specific to this group, as we require a charge density projection for each impurities group for coupling
-                                             
     logical             :: use_sheath              !< switch on sheath boundary conditions for this impurities group
     real*8              :: ics_concentration = 0.d0 !< impurity concentration for density-proportional initialization (0 = use puffing mode)
 
